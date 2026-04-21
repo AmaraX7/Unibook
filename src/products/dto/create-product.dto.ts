@@ -1,9 +1,9 @@
 import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 
-// DTO para crear un nuevo item, el ! es obligatorio, y el ? opcional,
+// DTO para crear un nuevo product, el ! es obligatorio y el ? opcional.
 // esto es cuando al controller le llega un body, lo transforma a este dto
-export class CreateItemDto {
+export class CreateProductDto {
   @IsString()
   @IsNotEmpty()
   name!: string;
@@ -18,11 +18,7 @@ export class CreateItemDto {
 
   @IsInt()
   @Min(1)
-  totalStock!: number;
-
-  @IsInt()
-  @Min(0)
-  availableStock!: number;
+  stock!: number;
 
   @IsNumber()
   @Min(0)

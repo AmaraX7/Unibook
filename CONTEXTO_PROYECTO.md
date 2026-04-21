@@ -1,8 +1,7 @@
-# Proyecto: Sistema de prestamo de equipamiento
+# Proyecto: API REST Ecommerce
 
 ## Que es esto
-API REST para gestionar el prestamo de equipamiento (bicis, libros, instrumentos, herramientas, etc.).
-Los usuarios pueden ver que items hay disponibles, pedir un prestamo, devolverlos, y el sistema detecta retrasos automaticamente.
+API REST para gestionar un ecommerce. Los usuarios pueden ver productos, añadirlos a un pedido, y el sistema gestiona el stock y los estados del pedido automaticamente.
 
 ## Stack
 - **Framework**: NestJS (Node.js + TypeScript)
@@ -31,6 +30,7 @@ src/
 |   |-- auth.controller.ts
 |   |-- auth.service.ts
 |   |-- jwt.strategy.ts
+|   |-- jwt-auth.guard.ts
 |   \-- dto/
 |       |-- register.dto.ts
 |       \-- login.dto.ts
@@ -39,39 +39,46 @@ src/
 |   |-- users.service.ts
 |   \-- entities/
 |       \-- user.entity.ts
-|-- items/
-|   |-- items.module.ts
-|   |-- items.controller.ts
-|   |-- items.service.ts
+|-- products/
+|   |-- products.module.ts
+|   |-- products.controller.ts
+|   |-- products.service.ts
 |   |-- entities/
-|   |   \-- item.entity.ts
+|   |   \-- product.entity.ts
 |   \-- dto/
-|       |-- create-item.dto.ts
-|       \-- update-item.dto.ts
-\-- loans/
-    |-- loans.module.ts
-    |-- loans.controller.ts
-    |-- loans.service.ts
+|       |-- create-product.dto.ts
+|       \-- update-product.dto.ts
+\-- orders/
+    |-- orders.module.ts
+    |-- orders.controller.ts
+    |-- orders.service.ts
     |-- entities/
-    |   \-- loan.entity.ts
+    |   |-- order.entity.ts
+    |   \-- order-item.entity.ts
     \-- dto/
-        |-- create-loan.dto.ts
-        \-- return-loan.dto.ts
+        |-- create-order.dto.ts
+        \-- update-order-status.dto.ts
 ```
 
 ## Entidades principales
 
 ### User
-- id, email, passwordHash, name, createdAt
-- Relacion: tiene muchos Loans
+- id, email, password, role (USER | ADMIN), createdAt
+- Relacion: tiene muchos Orders
 
-### Item
-- id, name, description, totalStock, availableStock, category, createdAt
-- Relacion: tiene muchos Loans
+### Product
+- id, name, description, price, stock, category, createdAt
+- Relacion: tiene muchos OrderItems
 
-### Loan
-- id, userId, itemId, quantity, borrowedAt, dueDate, returnedAt, status, penaltyDays
-- Status enum: ACTIVE | RETURNED | OVERDUE
+### Order
+- id, userId, status, total, createdAt, updatedAt
+- Status enum: PENDING | PAID | SHIPPED | DELIVERED | CANCELLED
+- Relacion: pertenece a User, tiene muchos OrderItems
+
+### OrderItem
+- id, orderId, productId, quantity, unitPrice
+- unitPrice guarda el precio en el momento de la compra (el precio del producto puede cambiar despues)
+- Relacion: pertenece a Order y a Product
 
 ## Endpoints principales
 
@@ -79,42 +86,45 @@ src/
 - POST /auth/register - crear cuenta
 - POST /auth/login - obtener JWT
 
-### Items (publico para GET, protegido para mutaciones)
-- GET /items - listar items con stock disponible
-- GET /items/:id - detalle de un item
-- POST /items - crear item (admin)
-- PATCH /items/:id - actualizar item (admin)
-- DELETE /items/:id - eliminar item (admin)
+### Products (publico para GET, protegido para mutaciones)
+- GET /products - listar productos con stock disponible
+- GET /products/:id - detalle de un producto
+- POST /products - crear producto (admin)
+- PATCH /products/:id - actualizar producto (admin)
+- DELETE /products/:id - eliminar producto (admin)
 
-### Loans (todos protegidos con JWT)
-- POST /loans - crear prestamo (verifica stock disponible)
-- GET /loans/my - prestamos del usuario autenticado
-- PATCH /loans/:id/return - devolver item (calcula penalizacion si hay retraso)
-- GET /loans - todos los prestamos (admin)
+### Orders (todos protegidos con JWT)
+- POST /orders - crear pedido (verifica stock, calcula total)
+- GET /orders/my - pedidos del usuario autenticado
+- PATCH /orders/:id/status - actualizar estado del pedido (admin)
+- GET /orders - todos los pedidos (admin)
 
 ## Logica de negocio importante
 
-### Al crear un prestamo
-1. Verificar que item existe
-2. Verificar que availableStock >= quantity solicitada
-3. Decrementar availableStock
-4. Crear Loan con status ACTIVE y dueDate = borrowedAt + X dias
-5. Todo en una transaccion de base de datos
+### Al crear un pedido
+1. Verificar que todos los productos existen
+2. Verificar que hay stock suficiente para cada producto
+3. Calcular el total = suma de (quantity * price) por cada producto
+4. Guardar unitPrice en OrderItem (precio en el momento de compra)
+5. Decrementar el stock de cada producto
+6. Crear Order con status PENDING
+7. Todo en una transaccion de base de datos
 
-### Al devolver un prestamo
-1. Verificar que el prestamo existe y pertenece al usuario
-2. Calcular penaltyDays = max(0, dias desde dueDate)
-3. Incrementar availableStock
-4. Actualizar status a RETURNED o OVERDUE si hay penalizacion
-5. Guardar returnedAt = now()
+### Al cancelar un pedido
+1. Verificar que el pedido existe y pertenece al usuario
+2. Verificar que el estado es PENDING (no se puede cancelar si ya fue enviado)
+3. Restaurar el stock de cada producto
+4. Actualizar status a CANCELLED
 
-### Deteccion de items con retraso
-- Un job o endpoint puede marcar como OVERDUE los loans ACTIVE con dueDate < now()
+### Cambio de estado (admin)
+- PENDING → PAID → SHIPPED → DELIVERED
+- Solo admin puede cambiar estados
+- No se puede retroceder un estado
 
 ## Reglas de desarrollo
 
 - Usar DTOs con validadores (@IsString, @IsInt, @Min, etc.) en todos los endpoints
-- Nunca exponer passwordHash en ninguna respuesta
+- Nunca exponer password en ninguna respuesta
 - Manejar errores con las excepciones de NestJS (NotFoundException, BadRequestException, etc.)
 - Separar logica de negocio en el Service, el Controller solo enruta
 - Variables de entorno en .env (nunca hardcodear credenciales)
@@ -125,9 +135,9 @@ src/
 ```env
 DB_HOST=localhost
 DB_PORT=5432
-DB_USER=postgres
+DB_USERNAME=postgres
 DB_PASSWORD=tu_password
-DB_NAME=loan_system
+DB_NAME=ecommerce
 JWT_SECRET=una_clave_secreta_larga
 JWT_EXPIRES_IN=7d
 PORT=3000
@@ -135,13 +145,19 @@ PORT=3000
 
 ## Plan de desarrollo (7 dias)
 
-- Dia 1: nest new + estructura base + primer endpoint GET /items hardcodeado
-- Dia 2: TypeScript + DTOs + class-validator + POST /items con validacion
-- Dia 3: PostgreSQL + TypeORM + entidades + CRUD completo persistido
-- Dia 4: Modulo loans + logica de negocio + estados + transacciones
-- Dia 5: Auth JWT + guards + registro/login
+- Dia 1: nest new + estructura base + primer endpoint GET /products hardcodeado
+- Dia 2: TypeScript + DTOs + class-validator + POST /products con validacion
+- Dia 3: PostgreSQL + TypeORM + entidades + CRUD completo de products persistido
+- Dia 4: Users + Auth JWT + guards + registro/login ✅
+- Dia 5: Modulo orders + logica de negocio + transacciones + control de stock
 - Dia 6: Tests Jest (3-4 unitarios) + Swagger + .env
 - Dia 7: Docker + despliegue Railway/Render + README
+
+## Estado actual
+- ✅ Auth completo (register, login, JWT, guards)
+- ✅ Users (entidad, servicio)
+- ✅ Products (CRUD completo, endpoints protegidos con JwtAuthGuard)
+- [ ] Orders (siguiente paso — dia 5)
 
 ## Como pedirme ayuda
 Cuando estes atascado dime:

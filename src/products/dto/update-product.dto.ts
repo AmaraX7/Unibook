@@ -1,8 +1,8 @@
 import { IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 
-// dto para actualizar los items, como no quiero que sea obligatorio actualziarlo todo lo pongo opcional
-export class UpdateItemDto {
+// DTO para actualizar products; todo es opcional para permitir cambios parciales.
+export class UpdateProductDto {
   @IsString()
   @IsOptional()
   name?: string;
@@ -18,12 +18,7 @@ export class UpdateItemDto {
   @IsInt()
   @Min(1)
   @IsOptional()
-  totalStock?: number;
-
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  availableStock?: number;
+  stock?: number;
 
   @IsNumber()
   @Min(0)
