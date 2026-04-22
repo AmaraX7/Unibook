@@ -22,7 +22,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   // - payload es el objeto que metiste en jwtService.sign() al hacer login
   // - lo que devuelves aquí queda disponible como req.user en los controllers
   async validate(payload: any) {
-    return { userId: payload.sub, email: payload.email };
+    return { userId: payload.sub, email: payload.email, role: payload.role };
   }
 }
 
@@ -30,5 +30,5 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 // 1. Cliente manda request con header: Authorization: Bearer <token>
 // 2. JwtAuthGuard intercepta la request y llama a JwtStrategy
 // 3. JwtStrategy verifica el token y llama a validate()
-// 4. validate() devuelve { userId, email } → disponible como req.user
+// 4. validate() devuelve { userId, email, role } → disponible como req.user
 // 5. Si el token es inválido → 401 automático, nunca llega al controller

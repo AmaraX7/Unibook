@@ -32,7 +32,7 @@ async login(dto: LoginDto) {
         throw new UnauthorizedException('Invalid credentials');
     }   
 
-    return { access_token: this.jwtService.sign({ email: user.email, sub: user.id }) };
+    return { access_token: this.jwtService.sign({ email: user.email, sub: user.id, role: user.role }) };
  }
 
 }

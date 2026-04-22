@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
 import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
+import { UpdateRoleDto } from './dto/update-role.dto';
 
 
 @Injectable()
@@ -25,9 +26,20 @@ export class UsersService {
     return this.usersRepository.save(user);
   }
 
-  async deleteUser(email: string): Promise<void> {
-    await this.findByEmail(email); // lanza NotFoundException si no existe
-    await this.usersRepository.delete({ email });
-  }     
+async deleteById(id: number): Promise<void> {
+  const user = await this.usersRepository.findOne({ where: { id } });
+  if (!user) throw new NotFoundException(`User #${id} not found`);
+  await this.usersRepository.delete(id);
+} 
+
+  async updateRole(id: number, dto: UpdateRoleDto): Promise<User> {
+    const user = await this.usersRepository.findOne({ where: { id } });
+    if (!user) throw new NotFoundException(`User #${id} not found`);
+    
+    Object.assign(user, dto);
+    return this.usersRepository.save(user);
+  }
+
+
   
 }
