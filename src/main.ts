@@ -1,6 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -13,6 +16,20 @@ async function bootstrap() {
       transform: true,           // convierte tipos: ej. "1" (string) → 1 (number)
     }),
   );
+  app.useGlobalFilters(new HttpExceptionFilter()); // atrapa excepciones HTTP y devuelve un formato JSON consistente para frontend
+
+  const config = new DocumentBuilder()
+  .setTitle('Sistema de reservas de la universidad')
+  .setDescription('API REST para gestionar reservas de recursos universitarios')
+  .setVersion('1.0')
+  .addBearerAuth(
+    { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+    'JWT-auth'
+  )
+  .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document);
 
   // escucha en el puerto definido en .env o 3000 por defecto
   await app.listen(process.env.PORT ?? 3001);

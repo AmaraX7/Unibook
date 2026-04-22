@@ -6,19 +6,25 @@ import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiTags('reservations')
 @Controller('reservations')
 export class ReservationsController {
     constructor(private readonly reservationsService: ReservationsService) {}
 
 @Post()
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth('JWT-auth')
+@ApiOperation({ summary: 'Crear una nueva reserva' })
 create(@Body() dto: CreateReservationDto, @Request() req) {
   return this.reservationsService.create(req.user.userId, dto);
 }
 
 @Get('my')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth('JWT-auth')
+@ApiOperation({ summary: 'Buscar reservas por usuario' })
 async findByUser(@Request() req) {
   return this.reservationsService.findByUser(req.user.userId);
 }
@@ -28,6 +34,8 @@ async findByUser(@Request() req) {
 
 @Patch(':id/status')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth('JWT-auth')
+@ApiOperation({ summary: 'Actualizar estado de la reserva' })
 updateStatus(@Param('id') id: number, @Body() dto: UpdateReservationDto, @Request() req) {
   return this.reservationsService.updateStatus(id, dto, req.user.userId, req.user.role);
 }
@@ -35,12 +43,16 @@ updateStatus(@Param('id') id: number, @Body() dto: UpdateReservationDto, @Reques
 @Get('all')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
+@ApiBearerAuth('JWT-auth')
+@ApiOperation({ summary: 'Buscar todas las reservas' })
 async findAll() {
   return this.reservationsService.findAll();
 }
 
 @Get(':id')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth('JWT-auth')
+@ApiOperation({ summary: 'Buscar reserva por ID' })
 findById(@Param('id') id: string) {
   return this.reservationsService.findById(Number(id));
 }
