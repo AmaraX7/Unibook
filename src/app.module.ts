@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+﻿import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ResourcesModule } from './resources/resources.module';
@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 
 @Module({
@@ -53,5 +54,14 @@ import { APP_GUARD } from '@nestjs/core';
   useClass: ThrottlerGuard, // aplica el guard globalmente a toda la app
 }],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(LoggerMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL });
+  }
+}
 
+
+// flujo:
+// middleware, guards, pipes, interceptors, controllers, services, repositories, exception filters, response

@@ -18,7 +18,7 @@ export class UsersController {
   @Roles('admin')
   @ApiOperation({ summary: 'Buscar usuario por email' })
   @ApiBearerAuth('JWT-auth')
-  async findByEmail(@Param('email') email: string): Promise<User | null> {
+  async findByEmail(@Param('email') email: string) {
     return this.usersService.findByEmail(email);
   }
 
@@ -37,7 +37,7 @@ export class UsersController {
   @Patch(':id/role')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Actualizar rol de un usuario' })
-  async updateRole(@Param('id') id: number, @Body() dto: UpdateRoleDto): Promise<User> {
+  async updateRole(@Param('id') id: number, @Body() dto: UpdateRoleDto){
     return this.usersService.updateRole(id, dto);
   }
 }

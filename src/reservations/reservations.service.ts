@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Reservation, ReservationStatus } from './entities/reservations.entity';
@@ -9,6 +9,8 @@ import { LessThan, MoreThan } from 'typeorm';
 
 @Injectable()
 export class ReservationsService {
+  private readonly logger = new Logger(ReservationsService.name);
+
   constructor(
     @InjectRepository(Reservation)
     private readonly reservationsRepository: Repository<Reservation>,
@@ -24,10 +26,12 @@ export class ReservationsService {
 //   take: 10,                         // LIMIT
 // });
   async create(userId: number, dto: CreateReservationDto): Promise<Reservation> {
+    this.logger.log(`Creating reservation userId=${userId}, resourceId=${dto.resourceId}`);
     const resource = await this.resourcesService.findOne(dto.resourceId);
         if (!resource) throw new NotFoundException(`Resource #${dto.resourceId} not found`);
 
         if (dto.startTime >= dto.endTime) {
+        this.logger.warn(`Invalid reservation range userId=${userId}, resourceId=${dto.resourceId}`);
             throw new BadRequestException('startTime must be before endTime');
         }
         const overlapping = await this.reservationsRepository.findOne({
@@ -39,6 +43,7 @@ export class ReservationsService {
             }
         });
         if (overlapping) {
+          this.logger.warn(`Overlapping reservation detected for resourceId=${dto.resourceId}`);
             throw new BadRequestException('there is an overlapping reservation for this resource and time');
         }
         const reservation = this.reservationsRepository.create({ 
@@ -47,7 +52,9 @@ export class ReservationsService {
   resource: { id: dto.resourceId }
 });
 
-        return this.reservationsRepository.save(reservation);
+        const savedReservation = await this.reservationsRepository.save(reservation);
+        this.logger.log(`Reservation created id=${savedReservation.id}`);
+        return savedReservation;
 
     // 1. Verificar que el recurso existe
     // 2. Verificar que startTime < endTime
@@ -56,16 +63,19 @@ export class ReservationsService {
   }
 
 async findAll(): Promise<Reservation[]> {
+  this.logger.log('Listing all reservations');
   return this.reservationsRepository.find();
 }
 
 async findByUser(userId: number): Promise<Reservation[]> {
+  this.logger.log(`Listing reservations for userId=${userId}`);
   return this.reservationsRepository.find({ where: { userId: userId } });
 }
 
 async findById(id: number): Promise<Reservation> {
   const reservation = await this.reservationsRepository.findOne({ where: { id: id } });
   if (!reservation) {
+    this.logger.warn(`Reservation not found: id=${id}`);
     throw new NotFoundException(`Reservation #${id} not found`);
   }
   return reservation;
@@ -74,6 +84,7 @@ async findById(id: number): Promise<Reservation> {
 async updateStatus(id: number, dto: UpdateReservationDto, userId: number, role: string): Promise<Reservation> {
   const reservation = await this.reservationsRepository.findOne({ where: { id: id } });
   if (!reservation) {
+    this.logger.warn(`Reservation not found for status update: id=${id}`);
     throw new NotFoundException(`Reservation #${id} not found`);
   }
 
@@ -90,6 +101,7 @@ async updateStatus(id: number, dto: UpdateReservationDto, userId: number, role: 
   }
 
   await this.reservationsRepository.update(id, { status: reservation.status });
+  this.logger.log(`Updated reservation status id=${id}, status=${reservation.status}`);
   return reservation;
 }
 }

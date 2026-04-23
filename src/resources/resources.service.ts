@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Resource } from './entities/resource.entity';
@@ -48,27 +48,35 @@ import { UpdateResourceDto } from './dto/update-resource.dto';
 
 @Injectable()
 export class ResourcesService {
+  private readonly logger = new Logger(ResourcesService.name);
+
   constructor(
   @InjectRepository(Resource)
   private readonly resourcesRepository: Repository<Resource>,
   ) {}
 
   async findAll(): Promise<Resource[]> {
-  return this.resourcesRepository.find();
+    this.logger.log('Listing all resources');
+    return this.resourcesRepository.find();
   }
 
   async findOne(id: number): Promise<Resource> {
     const resource = await this.resourcesRepository.findOne({ where: { id } });
-    if (!resource) throw new NotFoundException(`Resource #${id} not found`);
+    if (!resource) {
+      this.logger.warn(`Resource not found: id=${id}`);
+      throw new NotFoundException(`Resource #${id} not found`);
+    }
     return resource;
   }
 
   async deleteOne(id: number): Promise<void> {
     await this.findOne(id); // lanza NotFoundException si no existe
     await this.resourcesRepository.delete(id);
+    this.logger.log(`Deleted resource id=${id}`);
   }
 
   async create(dto: CreateResourceDto): Promise<Resource> {
+    this.logger.log(`Creating resource name=${dto.name}, type=${dto.type}`);
     const resource = this.resourcesRepository.create(dto);
     return this.resourcesRepository.save(resource);
   }
@@ -76,6 +84,7 @@ export class ResourcesService {
   async update(id: number, dto: UpdateResourceDto): Promise<Resource> {
     const resource = await this.findOne(id);
     Object.assign(resource, dto);
+    this.logger.log(`Updated resource id=${id}`);
     return this.resourcesRepository.save(resource);
   }
 }

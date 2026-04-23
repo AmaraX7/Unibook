@@ -5,31 +5,14 @@ API REST para gestionar la reserva de recursos universitarios (salas, portátile
 Los usuarios pueden ver qué recursos hay disponibles, hacer una reserva por franja horaria, y el sistema detecta conflictos de solapamiento automáticamente.
 
 ## Stack
-- **Framework**: NestJS (Node.js + TypeScript)
-- **Base de datos**: PostgreSQL con TypeORM
+ Logger de NestJS integrado (implementado)
+ Log de cada request y cada error (implementado)
 - **Auth**: JWT con Passport
 - **Validacion**: class-validator + class-transformer
-- **Documentacion**: Swagger automatico (@nestjs/swagger)
-- **Tests**: Jest
-- **Despliegue**: Docker + Railway/Render
-
-## Contexto del desarrollador
-- Estudiante de ultimo ano de ingenieria informatica (mencion software)
-- Buena base en C++, Java, algo de Python/Django
-- Conoce conceptos de arquitectura de software, REST, OpenAPI, diagramas UML
-- Familiarizado con PostgreSQL y Docker
+ ✅ Logs (middleware y Logger en servicios)
 - Es su primer proyecto real con NestJS y TypeScript - priorizar claridad sobre elegancia
 
 ## Estructura de modulos
-
-```text
-src/
-|-- app.module.ts
-|-- main.ts
-|-- auth/
-|   |-- auth.module.ts
-|   |-- auth.controller.ts
-|   |-- auth.service.ts
 |   |-- jwt.strategy.ts
 |   |-- jwt-auth.guard.ts
 |   |-- roles.guard.ts
