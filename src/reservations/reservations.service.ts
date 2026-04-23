@@ -6,6 +6,10 @@ import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { ResourcesService } from '../resources/resources.service';
 import { LessThan, MoreThan } from 'typeorm';
+import { DataSource } from 'typeorm';
+import { Resource } from '../resources/entities/resource.entity';
+import { PaginationDto } from '../common/dto/pagination.dto';
+
 
 @Injectable()
 export class ReservationsService {
@@ -15,7 +19,7 @@ export class ReservationsService {
     @InjectRepository(Reservation)
     private readonly reservationsRepository: Repository<Reservation>,
 
-    private readonly resourcesService: ResourcesService,
+    private readonly dataSource: DataSource,
   ) {}
 
   
@@ -26,46 +30,76 @@ export class ReservationsService {
 //   take: 10,                         // LIMIT
 // });
   async create(userId: number, dto: CreateReservationDto): Promise<Reservation> {
+    // 1. Verificar que el recurso existe
+    // 2. Verificar que startTime < endTime
+    // 3. Detectar solapamiento
+    // 4. Crear y guardar la reserva
     this.logger.log(`Creating reservation userId=${userId}, resourceId=${dto.resourceId}`);
-    const resource = await this.resourcesService.findOne(dto.resourceId);
-        if (!resource) throw new NotFoundException(`Resource #${dto.resourceId} not found`);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const resource = await queryRunner.manager.findOne(Resource, { where: { id: dto.resourceId } }); 
+      // hacemos lock del recurso para q otra persona no pueda crear reserva  para el mismo recurso y la misma hora a la vez, 
+      // y pongo la clase en el findone poruqe el queryrunner no sabe 
+      if (!resource) throw new NotFoundException(`Resource #${dto.resourceId} not found`);
 
         if (dto.startTime >= dto.endTime) {
         this.logger.warn(`Invalid reservation range userId=${userId}, resourceId=${dto.resourceId}`);
             throw new BadRequestException('startTime must be before endTime');
         }
-        const overlapping = await this.reservationsRepository.findOne({
+        const overlapping = await  queryRunner.manager.findOne(Reservation, {
             where: {
                 resource: { id: dto.resourceId },
                 startTime: LessThan(dto.endTime),
                 endTime: MoreThan(dto.startTime),
                 status: ReservationStatus.CONFIRMED
-            }
+            }, lock: { mode: 'pessimistic_write' }
         });
-        if (overlapping) {
+      // lock pesimista: bloqueamos las filas de reservas de este recurso para que
+      // ninguna otra transacción concurrente pueda leerlas hasta que hagamos commit,
+      // evitando que dos requests pasen el check de solapamiento simultáneamente y creen reservas solapadas
+         if (overlapping) {
           this.logger.warn(`Overlapping reservation detected for resourceId=${dto.resourceId}`);
             throw new BadRequestException('there is an overlapping reservation for this resource and time');
         }
-        const reservation = this.reservationsRepository.create({ 
+        const reservation = queryRunner.manager.create(Reservation, { 
   ...dto, 
   user: { id: userId },
   resource: { id: dto.resourceId }
 });
 
-        const savedReservation = await this.reservationsRepository.save(reservation);
+        const savedReservation = await queryRunner.manager.save(reservation);
         this.logger.log(`Reservation created id=${savedReservation.id}`);
+        await queryRunner.commitTransaction();
         return savedReservation;
 
-    // 1. Verificar que el recurso existe
-    // 2. Verificar que startTime < endTime
-    // 3. Detectar solapamiento
-    // 4. Crear y guardar la reserva
-  }
 
-async findAll(): Promise<Reservation[]> {
-  this.logger.log('Listing all reservations');
-  return this.reservationsRepository.find();
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+   
+    let message: string;
+
+    if (error instanceof Error) {
+      message = error.message;
+    } else {
+      message = String(error);
+    }
+    this.logger.error(`Failed to create reservation for userId=${userId}, resourceId=${dto.resourceId}: ${message}`);
+    throw error;
+  } finally {
+    await queryRunner.release();
+  }
 }
+
+  async findAll(pagination: PaginationDto): Promise<{ reservations: Reservation[], total: number }> {
+    this.logger.log('Listing all reservations');
+    const [reservations, total] = await this.reservationsRepository.findAndCount({
+    take: pagination.limit,  // cuántos traer
+    skip: (pagination.page - 1) * pagination.limit,  // cuántos saltar
+  });
+    return { reservations, total }; 
+  }
 
 async findByUser(userId: number): Promise<Reservation[]> {
   this.logger.log(`Listing reservations for userId=${userId}`);

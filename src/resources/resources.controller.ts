@@ -1,4 +1,4 @@
-﻿import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+﻿import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { CreateResourceDto } from './dto/create-resource.dto';
 import { UpdateResourceDto } from './dto/update-resource.dto';
 import { ResourcesService } from './resources.service';
@@ -8,6 +8,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('resources')
 // El controlador recibe peticiones y delega la logica al servicio.
@@ -16,11 +17,9 @@ export class ResourcesController {
   constructor(private readonly resourcesService: ResourcesService) {}
 
     @Get() 
-  @ApiOperation({summary: 'Buscar todos los recursos'})
-  getAll(): Promise<Resource[]> {
-    return this.resourcesService.findAll();
-  }
-  
+async findAll(@Query() pagination: PaginationDto) {
+  return this.resourcesService.findAll(pagination);
+}
     @Post() 
     @UseGuards(JwtAuthGuard, RolesGuard)
     @ApiBearerAuth('JWT-auth')

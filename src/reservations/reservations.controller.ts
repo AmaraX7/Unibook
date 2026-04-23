@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
 import { Body, Post, Request, UseGuards, Patch, Param, ParseIntPipe } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -7,6 +7,7 @@ import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('reservations')
 @Controller('reservations')
@@ -45,8 +46,8 @@ updateStatus(@Param('id') id: number, @Body() dto: UpdateReservationDto, @Reques
 @Roles('admin')
 @ApiBearerAuth('JWT-auth')
 @ApiOperation({ summary: 'Buscar todas las reservas' })
-async findAll() {
-  return this.reservationsService.findAll();
+async findAll(@Query() pagination: PaginationDto) {
+  return this.reservationsService.findAll(pagination);
 }
 
 @Get(':id')

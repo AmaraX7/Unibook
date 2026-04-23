@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Resource } from './entities/resource.entity';
 import { CreateResourceDto } from './dto/create-resource.dto';
 import { UpdateResourceDto } from './dto/update-resource.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 // OPERACIONES TYPEORM a SQL 
 
@@ -55,9 +56,14 @@ export class ResourcesService {
   private readonly resourcesRepository: Repository<Resource>,
   ) {}
 
-  async findAll(): Promise<Resource[]> {
+
+  async findAll(pagination: PaginationDto): Promise<{ resources: Resource[], total: number }> {
     this.logger.log('Listing all resources');
-    return this.resourcesRepository.find();
+    const [resources, total] = await this.resourcesRepository.findAndCount({
+    take: pagination.limit,  // cuántos traer
+    skip: (pagination.page - 1) * pagination.limit,  // cuántos saltar
+  });
+    return { resources, total }; 
   }
 
   async findOne(id: number): Promise<Resource> {
