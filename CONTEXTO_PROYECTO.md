@@ -43,6 +43,15 @@ src/
 |       |-- register.dto.ts
 |       |-- login.dto.ts
 |       \-- refresh.dto.ts
+|-- companies/
+|   |-- companies.module.ts
+|   |-- companies.controller.ts
+|   |-- companies.service.ts
+|   |-- entities/
+|   |   \-- company.entity.ts
+|   \-- dto/
+|       |-- create-company.dto.ts
+|       \-- update-company.dto.ts
 |-- users/
 |   |-- users.module.ts
 |   |-- users.controller.ts
@@ -81,15 +90,19 @@ src/
 
 ## Entidades principales
 
+### Company
+- id, name, description, createdAt
+- Relacion: tiene muchas Resources, tiene muchos Users
+
 ### Resource
-- id, name, description, location, status, type, createdAt
+- id, name, description, location, status, type, capacity (nullable), companyId, createdAt
 - status enum: AVAILABLE | UNAVAILABLE | MAINTENANCE
-- type: string libre (classroom, laptop, lab, bike, book...) — sin subclases, un solo objeto con tipo
-- Relacion: tiene muchas Reservations
+- type: string libre (desk, meeting_room, phone_booth, lounge, parking)
+- Relacion: tiene muchas Reservations, pertenece a una Company
 
 ### User
-- id, email, password, role (USER | ADMIN), createdAt
-- Relacion: tiene muchas Reservations
+- id, email, password, role (USER | COMPANY_ADMIN | SUPER_ADMIN), companyId (nullable), createdAt
+- Relacion: tiene muchas Reservations, pertenece a una Company (nullable)
 
 ### Reservation (tabla asociativa entre User y Resource)
 - id, userId, resourceId, startTime, endTime, status, createdAt
@@ -107,6 +120,8 @@ src/
 - **Migraciones con synchronize: false en produccion** — las migraciones corren automaticamente en el CMD del Dockerfile al desplegar
 - **Filtro global de excepciones** — todas las respuestas de error tienen el mismo formato: statusCode, message, timestamp, path
 - **Rate limiting** — @nestjs/throttler limita requests por IP
+- **Multi-tenancy con Company** — cada Resource pertenece a una Company. COMPANY_ADMIN solo puede gestionar resources y usuarios de su empresa. SUPER_ADMIN gestiona todo. La jerarquía se aplica en el Service con ForbiddenException
+- **companyId en JWT** — el token incluye id, email, role y companyId para que los guards puedan filtrar por empresa sin consultar la BD
 
 ## Endpoints principales
 
@@ -134,6 +149,13 @@ src/
 - PATCH /reservations/:id/status - actualizar estado
 - GET /reservations/all?page=1&limit=10 - todas las reservas (admin)
 
+### Companies (todos SUPER_ADMIN)
+- POST /companies
+- GET /companies
+- GET /companies/:id
+- PATCH /companies/:id
+- DELETE /companies/:id
+
 ## Logica de negocio importante
 
 ### Al crear una reserva
@@ -155,7 +177,8 @@ src/
 
 ### Roles
 - USER → puede crear reservas, ver las suyas, cancelar las suyas
-- ADMIN → puede hacer todo lo anterior + gestionar recursos + ver todas las reservas + completar reservas + gestionar usuarios
+- COMPANY_ADMIN → gestiona resources y usuarios de su empresa, ve reservas de su empresa
+- SUPER_ADMIN → gestiona todo, incluyendo empresas y usuarios de cualquier empresa
 
 ## Estado actual
 - ✅ Auth completo (register, login, JWT, guards, roles, refresh tokens)
@@ -170,15 +193,18 @@ src/
 - ✅ Migraciones con TypeORM
 - ✅ README
 - ✅ Seed script
+- ✅ Companies (CRUD completo, solo SUPER_ADMIN)
+- ✅ Multi-tenancy (Company → Resource, Company → User)
 - ✅ GET/PATCH/DELETE /users/me
+- ✅ Makefile (dev, seed, migrations, docker)
+- ✅ Pivot a dominio coworking (desk, meeting_room, phone_booth, lounge, parking)
 
 falta por hacer: 
- 
- Tests Jest
- WebSockets
- Chatbot IA
- Bot Telegram
- Frontend React
+Tests Jest
+WebSockets
+Chatbot IA
+Bot Telegram
+Frontend React
 
 ## Roadmap
 

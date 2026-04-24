@@ -30,3 +30,7 @@ logs:
 
 seed-docker:
 	docker exec -it sistema-reservas-app-1 npx ts-node src/seed.ts
+
+
+seed-prod:
+	npx cross-env DB_HOST=aws-1-eu-central-1.pooler.supabase.com DB_PORT=5432 DB_USERNAME=$(PROD_USER) DB_PASSWORD=$(PROD_PASSWORD) DB_NAME=postgres npx ts-node src/seed.ts
