@@ -31,7 +31,7 @@ import { CompaniesModule } from './companies/companies.module';
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_NAME'),
         autoLoadEntities: true, // carga automáticamente las entidades registradas en los módulos
-        synchronize: false ,      // en produccion sync = false!! 
+        synchronize: process.env.NODE_ENV !== 'production',      // en produccion sync = false!! 
       }),
       inject: [ConfigService],
     }),
