@@ -7,6 +7,10 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+    app.enableCors({ // permite q el frontend pueda hacer peticiones a esta api 
+    origin: true,
+    credentials: true,
+  });
   // useGlobalPipes aplica la validación a TODOS los endpoints automáticamente
   app.useGlobalPipes(
     new ValidationPipe({

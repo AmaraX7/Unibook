@@ -6,9 +6,10 @@ import { Doctor } from './entities/doctor.entity';
 import { Patient } from './entities/patient.entity';
 import { Staff } from './entities/staff.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { SuperAdmin } from './entities/super-admin.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Person, Doctor, Patient, Staff])],
+  imports: [TypeOrmModule.forFeature([Person, Doctor, Patient, Staff, SuperAdmin])],
   controllers: [PersonsController],
   providers: [PersonsService],
   exports: [PersonsService],

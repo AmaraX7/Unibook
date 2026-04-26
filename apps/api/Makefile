@@ -23,7 +23,7 @@ logs:
 	docker-compose logs -f
 
 seed-docker:
-	docker exec -it sistema-reservas-app-1 npx ts-node src/seed.ts
+	docker exec -it api-app-1 npx ts-node src/seed.ts
 
 # ─── Production ────────────────────────────────────────────────────────────────
 migration-generate-prod:

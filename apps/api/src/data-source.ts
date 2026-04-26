@@ -10,6 +10,7 @@ import { Visit } from './visits/entities/visit.entity';
 import { Admission } from './admissions/entities/admission.entity';
 import { Medication } from './medications/entities/medication.entity';
 import { Administration } from './administrations/entities/administration.entity';
+import { SuperAdmin } from './persons/entities/super-admin.entity';
 
 config();
 
@@ -20,7 +21,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  entities: [Company, Person, Doctor, Patient, Staff, Clinic, Visit, Admission, Medication, Administration],
+  entities: [Company, Person, Doctor, Patient, Staff, Clinic, Visit, Admission, Medication, Administration, SuperAdmin],
   migrations: [__dirname + '/migrations/*{.ts,.js}'],
   synchronize: false,
 });

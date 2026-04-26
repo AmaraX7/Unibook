@@ -6,26 +6,30 @@ import {
   Column,
   CreateDateColumn,
   ManyToOne,
+  OneToOne,
+  OneToMany,
   JoinColumn,
+  DeleteDateColumn,
+  TableInheritance,
+  ChildEntity,
 } from 'typeorm';
 
-// ─── Entidades ────────────────────────────────────────────────────────────────
+// ─── Enums ────────────────────────────────────────────────────────────────────
 
-export enum ResourceStatus {
-  AVAILABLE = 'AVAILABLE',
-  UNAVAILABLE = 'UNAVAILABLE',
-  MAINTENANCE = 'MAINTENANCE',
-}
-export enum UserRole {
-  USER = 'user',
-  COMPANY_ADMIN = 'company_admin',
+export enum PersonRole {
+  PATIENT = 'patient',
+  DOCTOR = 'doctor',
+  CLINIC_ADMIN = 'clinic_admin',
   SUPER_ADMIN = 'super_admin',
 }
-export enum ReservationStatus {
+
+export enum VisitStatus {
   CONFIRMED = 'CONFIRMED',
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
 }
+
+// ─── Entidades ────────────────────────────────────────────────────────────────
 
 @Entity('companies')
 class Company {
@@ -35,48 +39,101 @@ class Company {
   @CreateDateColumn() createdAt!: Date;
 }
 
-@Entity('users')
-class User {
+@Entity('persons')
+@TableInheritance({ column: { type: 'enum', enum: PersonRole, name: 'role' } })
+class Person {
   @PrimaryGeneratedColumn() id!: number;
+  @Column() firstName!: string;
+  @Column() lastName!: string;
   @Column({ unique: true }) email!: string;
   @Column() password!: string;
-  @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
-  role!: UserRole;
+  @Column({ unique: true }) dni!: string;
+  @Column({ type: 'varchar', nullable: true }) phone?: string;
+  @Column({ type: 'enum', enum: PersonRole }) role!: PersonRole;
   @Column({ nullable: true }) companyId?: number;
   @CreateDateColumn() createdAt!: Date;
+  @DeleteDateColumn() deletedAt?: Date;
 }
 
-@Entity('resources')
-class Resource {
+// ✅ Fix: SuperAdmin necesita su propio @ChildEntity para que TypeORM
+//         use 'super_admin' como discriminador en vez de 'Person'
+@ChildEntity(PersonRole.SUPER_ADMIN)
+class SuperAdmin extends Person {}
+
+@ChildEntity(PersonRole.DOCTOR)
+class Doctor extends Person {
+  @Column() specialty!: string;
+  @Column({ unique: true }) licenseNumber!: string;
+  @Column({ type: 'int', nullable: true }) yearsOfExperience?: number;
+}
+
+@ChildEntity(PersonRole.PATIENT)
+class Patient extends Person {
+  @Column({ nullable: true }) bloodType?: string;
+  @Column({ nullable: true }) allergies?: string;
+  @Column({ nullable: true }) insuranceNumber?: string;
+}
+
+@ChildEntity(PersonRole.CLINIC_ADMIN)
+class Staff extends Person {
+  @Column({ nullable: true }) position?: string;
+}
+
+@Entity('clinics')
+class Clinic {
   @PrimaryGeneratedColumn() id!: number;
   @Column() name!: string;
   @Column({ nullable: true }) description?: string;
-  @Column() status!: ResourceStatus;
-  @Column() location!: string;
-  @Column() type!: string;
+  @Column() address!: string;
+  @Column() specialty!: string;
   @Column({ nullable: true }) capacity?: number;
   @Column() companyId!: number;
   @CreateDateColumn() createdAt!: Date;
 }
 
-@Entity('reservations')
-class Reservation {
+@Entity('visits')
+class Visit {
   @PrimaryGeneratedColumn() id!: number;
-  @ManyToOne(() => User) @JoinColumn({ name: 'userId' }) user!: User;
-  @Column() userId!: number;
-  @ManyToOne(() => Resource)
-  @JoinColumn({ name: 'resourceId' })
-  resource!: Resource;
-  @Column() resourceId!: number;
-  @Column({
-    type: 'enum',
-    enum: ReservationStatus,
-    default: ReservationStatus.CONFIRMED,
-  })
-  status!: ReservationStatus;
-  @CreateDateColumn() createdAt!: Date;
+  @Column() doctorId!: number;
+  @Column() patientId!: number;
+  @Column() clinicId!: number;
+  @Column({ type: 'enum', enum: VisitStatus, default: VisitStatus.CONFIRMED }) status!: VisitStatus;
   @Column() startTime!: Date;
   @Column() endTime!: Date;
+  @Column({ nullable: true }) notes?: string;
+  @CreateDateColumn() createdAt!: Date;
+}
+
+@Entity('admissions')
+class Admission {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column() visitId!: number;
+  @Column({ type: 'date' }) admissionDate!: Date;
+  @Column({ type: 'date', nullable: true }) dischargeDate?: Date;
+  @Column({ nullable: true }) room?: string;
+  @Column({ nullable: true }) notes?: string;
+  @CreateDateColumn() createdAt!: Date;
+  @DeleteDateColumn() deletedAt?: Date;
+}
+
+@Entity('medications')
+class Medication {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column({ unique: true }) name!: string;
+  @Column({ nullable: true }) description?: string;
+  @Column({ nullable: true }) dosageUnit?: string;
+  @Column({ nullable: true }) sideEffects?: string;
+}
+
+@Entity('administrations')
+class Administration {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column() admissionId!: number;
+  @Column() medicationId!: number;
+  @Column({ type: 'timestamp' }) administeredAt!: Date;
+  @Column('float') dosage!: number;
+  @Column({ nullable: true }) notes?: string;
+  @CreateDateColumn() createdAt!: Date;
 }
 
 // ─── Conexión ─────────────────────────────────────────────────────────────────
@@ -88,7 +145,7 @@ const AppDataSource = new DataSource({
   username: process.env.DB_USERNAME ?? 'postgres',
   password: process.env.DB_PASSWORD ?? 'admin',
   database: process.env.DB_NAME ?? 'ecommerce',
-  entities: [Company, User, Resource, Reservation],
+  entities: [Person, SuperAdmin, Doctor, Patient, Staff, Company, Clinic, Visit, Admission, Medication, Administration],
   synchronize: false,
 });
 
@@ -96,273 +153,387 @@ const AppDataSource = new DataSource({
 
 async function seed() {
   await AppDataSource.initialize();
-  console.log('conectado a la base de datos');
+  console.log('Conectado a la base de datos');
 
+  const superAdminRepo = AppDataSource.getRepository(SuperAdmin); // ✅ repo correcto
+  const doctorRepo = AppDataSource.getRepository(Doctor);
+  const patientRepo = AppDataSource.getRepository(Patient);
+  const staffRepo = AppDataSource.getRepository(Staff);
+  const personRepo = AppDataSource.getRepository(Person);
   const companyRepo = AppDataSource.getRepository(Company);
-  const userRepo = AppDataSource.getRepository(User);
-  const resourceRepo = AppDataSource.getRepository(Resource);
-  const reservationRepo = AppDataSource.getRepository(Reservation);
+  const clinicRepo = AppDataSource.getRepository(Clinic);
+  const visitRepo = AppDataSource.getRepository(Visit);
+  const admissionRepo = AppDataSource.getRepository(Admission);
+  const medicationRepo = AppDataSource.getRepository(Medication);
+  const administrationRepo = AppDataSource.getRepository(Administration);
 
-  // limpia en orden correcto
-  await reservationRepo.query('DELETE FROM reservations');
-  await resourceRepo.query('DELETE FROM resources');
-  await userRepo.query('DELETE FROM users');
+  // Limpia en orden correcto
+  await administrationRepo.query('DELETE FROM administrations');
+  await admissionRepo.query('DELETE FROM admissions');
+  await visitRepo.query('DELETE FROM visits');
+  await clinicRepo.query('DELETE FROM clinics');
+  await medicationRepo.query('DELETE FROM medications');
+  await personRepo.query('DELETE FROM persons');
   await companyRepo.query('DELETE FROM companies');
   console.log('🗑️  Tablas limpiadas');
 
   // ── Empresas ──────────────────────────────────────────────────────────────
   const companies = await companyRepo.save([
-    {
-      name: 'WeWork Barcelona',
-      description: 'Coworking en el centro de Barcelona',
-    },
-    {
-      name: 'Spaces Diagonal',
-      description: 'Coworking premium en Av. Diagonal',
-    },
-    { name: 'MOB Makers', description: 'Coworking creativo en Poblenou' },
+    { name: 'Grup Mèdic Barcelona', description: 'Cadena de clínicas en Barcelona' },
+    { name: 'Clínicas del Norte', description: 'Cadena de clínicas en el norte de España' },
   ]);
   console.log(`🏢 ${companies.length} empresas insertadas`);
 
-  // ── Usuarios ──────────────────────────────────────────────────────────────
   const password = await bcrypt.hash('password123', 10);
 
-  const users = await userRepo.save([
-    // super admin
-    { email: 'super@admin.com', password, role: UserRole.SUPER_ADMIN },
-    // admins de cada empresa
-    {
-      email: 'admin@wework.com',
+  // ── Super Admin ───────────────────────────────────────────────────────────
+  // ✅ Usamos superAdminRepo → discriminador será 'super_admin'
+await superAdminRepo.save(
+  superAdminRepo.create({
+    firstName: 'Super',
+    lastName: 'Admin',
+    email: 'super@admin.com',
+    password,
+    dni: 'SADM000001',
+    role: PersonRole.SUPER_ADMIN,
+  }),
+);
+  console.log('🔑 Super admin insertado');
+
+  // ── Staff (CLINIC_ADMIN) ──────────────────────────────────────────────────
+  const staff = await staffRepo.save([
+    staffRepo.create({
+      firstName: 'Carlos',
+      lastName: 'Martínez',
+      email: 'admin@grupmedic.com',
       password,
-      role: UserRole.COMPANY_ADMIN,
+      dni: 'CADM000001',
+      role: PersonRole.CLINIC_ADMIN,
+      companyId: companies[0].id,
+      position: 'Director Médico',
+    }),
+    staffRepo.create({
+      firstName: 'Laura',
+      lastName: 'Sánchez',
+      email: 'admin@clinicasnorte.com',
+      password,
+      dni: 'CADM000002',
+      role: PersonRole.CLINIC_ADMIN,
+      companyId: companies[1].id,
+      position: 'Directora Médica',
+    }),
+  ]);
+  console.log(`👔 ${staff.length} admins insertados`);
+
+  // ── Doctores ──────────────────────────────────────────────────────────────
+  const doctors = await doctorRepo.save([
+    doctorRepo.create({
+      firstName: 'Ana',
+      lastName: 'García',
+      email: 'ana.garcia@grupmedic.com',
+      password,
+      dni: 'DOC0000001',
+      role: PersonRole.DOCTOR,
+      companyId: companies[0].id,
+      specialty: 'Cardiología',
+      licenseNumber: 'LIC-CAR-001',
+      yearsOfExperience: 12,
+    }),
+    doctorRepo.create({
+      firstName: 'Jordi',
+      lastName: 'Puig',
+      email: 'jordi.puig@grupmedic.com',
+      password,
+      dni: 'DOC0000002',
+      role: PersonRole.DOCTOR,
+      companyId: companies[0].id,
+      specialty: 'Neurología',
+      licenseNumber: 'LIC-NEU-001',
+      yearsOfExperience: 8,
+    }),
+    doctorRepo.create({
+      firstName: 'María',
+      lastName: 'López',
+      email: 'maria.lopez@grupmedic.com',
+      password,
+      dni: 'DOC0000003',
+      role: PersonRole.DOCTOR,
+      companyId: companies[0].id,
+      specialty: 'Pediatría',
+      licenseNumber: 'LIC-PED-001',
+      yearsOfExperience: 15,
+    }),
+    doctorRepo.create({
+      firstName: 'Roberto',
+      lastName: 'Fernández',
+      email: 'roberto.fernandez@clinicasnorte.com',
+      password,
+      dni: 'DOC0000004',
+      role: PersonRole.DOCTOR,
+      companyId: companies[1].id,
+      specialty: 'Traumatología',
+      licenseNumber: 'LIC-TRA-001',
+      yearsOfExperience: 20,
+    }),
+    doctorRepo.create({
+      firstName: 'Elena',
+      lastName: 'Ruiz',
+      email: 'elena.ruiz@clinicasnorte.com',
+      password,
+      dni: 'DOC0000005',
+      role: PersonRole.DOCTOR,
+      companyId: companies[1].id,
+      specialty: 'Dermatología',
+      licenseNumber: 'LIC-DER-001',
+      yearsOfExperience: 6,
+    }),
+  ]);
+  console.log(`👨‍⚕️ ${doctors.length} doctores insertados`);
+
+  // ── Pacientes ─────────────────────────────────────────────────────────────
+  const patients = await patientRepo.save([
+    patientRepo.create({
+      firstName: 'Alice',
+      lastName: 'Wonderland',
+      email: 'alice@patient.com',
+      password,
+      dni: 'PAT0000001',
+      role: PersonRole.PATIENT,
+      bloodType: 'A+',
+      insuranceNumber: 'INS-001',
+    }),
+    patientRepo.create({
+      firstName: 'Bob',
+      lastName: 'Builder',
+      email: 'bob@patient.com',
+      password,
+      dni: 'PAT0000002',
+      role: PersonRole.PATIENT,
+      bloodType: 'O-',
+      allergies: 'Penicilina',
+      insuranceNumber: 'INS-002',
+    }),
+    patientRepo.create({
+      firstName: 'Carol',
+      lastName: 'Danvers',
+      email: 'carol@patient.com',
+      password,
+      dni: 'PAT0000003',
+      role: PersonRole.PATIENT,
+      bloodType: 'B+',
+      insuranceNumber: 'INS-003',
+    }),
+    patientRepo.create({
+      firstName: 'David',
+      lastName: 'Bowie',
+      email: 'david@patient.com',
+      password,
+      dni: 'PAT0000004',
+      role: PersonRole.PATIENT,
+      bloodType: 'AB+',
+      insuranceNumber: 'INS-004',
+    }),
+    patientRepo.create({
+      firstName: 'Eve',
+      lastName: 'Online',
+      email: 'eve@patient.com',
+      password,
+      dni: 'PAT0000005',
+      role: PersonRole.PATIENT,
+      bloodType: 'A-',
+      insuranceNumber: 'INS-005',
+    }),
+  ]);
+  console.log(`🤒 ${patients.length} pacientes insertados`);
+
+  // ── Clínicas ──────────────────────────────────────────────────────────────
+  const clinics = await clinicRepo.save([
+    {
+      name: 'Clínica Cardio Barcelona',
+      description: 'Especializada en cardiología y neurología',
+      address: 'Carrer de Mallorca 123, Barcelona',
+      specialty: 'Cardiología',
+      capacity: 50,
       companyId: companies[0].id,
     },
     {
-      email: 'admin@spaces.com',
-      password,
-      role: UserRole.COMPANY_ADMIN,
+      name: 'Clínica Pediàtrica Gràcia',
+      description: 'Centro de pediatría en el barrio de Gràcia',
+      address: 'Carrer de Verdi 45, Barcelona',
+      specialty: 'Pediatría',
+      capacity: 30,
+      companyId: companies[0].id,
+    },
+    {
+      name: 'Clínica Traumatología Norte',
+      description: 'Especializada en traumatología y rehabilitación',
+      address: 'Calle Mayor 10, Bilbao',
+      specialty: 'Traumatología',
+      capacity: 40,
       companyId: companies[1].id,
     },
     {
-      email: 'admin@mob.com',
-      password,
-      role: UserRole.COMPANY_ADMIN,
-      companyId: companies[2].id,
-    },
-    // usuarios normales
-    { email: 'alice@gmail.com', password, role: UserRole.USER },
-    { email: 'bob@gmail.com', password, role: UserRole.USER },
-    { email: 'carol@gmail.com', password, role: UserRole.USER },
-    { email: 'dave@gmail.com', password, role: UserRole.USER },
-    { email: 'eve@gmail.com', password, role: UserRole.USER },
-  ]);
-  console.log(`👤 ${users.length} usuarios insertados`);
-
-  // ── Recursos ──────────────────────────────────────────────────────────────
-  const resources = await resourceRepo.save([
-    // WeWork Barcelona
-    {
-      name: 'Sala Picasso',
-      description: 'Sala de reuniones para 8 personas',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 3',
-      type: 'meeting_room',
-      capacity: 8,
-      companyId: companies[0].id,
-    },
-    {
-      name: 'Sala Gaudí',
-      description: 'Sala de reuniones para 12 personas',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 3',
-      type: 'meeting_room',
-      capacity: 12,
-      companyId: companies[0].id,
-    },
-    {
-      name: 'Phone Booth A',
-      description: 'Cabina insonorizada para llamadas',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 1',
-      type: 'phone_booth',
-      companyId: companies[0].id,
-    },
-    {
-      name: 'Desk 101',
-      description: 'Puesto individual junto a ventana',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 1',
-      type: 'desk',
-      companyId: companies[0].id,
-    },
-    {
-      name: 'Desk 102',
-      description: 'Puesto individual',
-      status: ResourceStatus.UNAVAILABLE,
-      location: 'Planta 1',
-      type: 'desk',
-      companyId: companies[0].id,
-    },
-    // Spaces Diagonal
-    {
-      name: 'Boardroom',
-      description: 'Sala ejecutiva para 20 personas',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 5',
-      type: 'meeting_room',
+      name: 'Clínica Dermatología Norte',
+      description: 'Centro dermatológico',
+      address: 'Calle Gran Vía 22, Bilbao',
+      specialty: 'Dermatología',
       capacity: 20,
       companyId: companies[1].id,
     },
-    {
-      name: 'Sala Miró',
-      description: 'Sala creativa para 6 personas',
-      status: ResourceStatus.MAINTENANCE,
-      location: 'Planta 2',
-      type: 'meeting_room',
-      capacity: 6,
-      companyId: companies[1].id,
-    },
-    {
-      name: 'Lounge Nord',
-      description: 'Zona lounge con sofás',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 1',
-      type: 'lounge',
-      companyId: companies[1].id,
-    },
-    {
-      name: 'Parking A1',
-      description: 'Plaza de parking cubierta',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Sótano 1',
-      type: 'parking',
-      companyId: companies[1].id,
-    },
-    {
-      name: 'Desk Premium 01',
-      description: 'Puesto standing desk',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 3',
-      type: 'desk',
-      companyId: companies[1].id,
-    },
-    // MOB Makers
-    {
-      name: 'Maker Lab',
-      description: 'Taller equipado con impresoras 3D',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 0',
-      type: 'meeting_room',
-      capacity: 10,
-      companyId: companies[2].id,
-    },
-    {
-      name: 'Sala Dalí',
-      description: 'Sala de presentaciones',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 1',
-      type: 'meeting_room',
-      capacity: 15,
-      companyId: companies[2].id,
-    },
-    {
-      name: 'Phone Booth B',
-      description: 'Cabina para videollamadas',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 1',
-      type: 'phone_booth',
-      companyId: companies[2].id,
-    },
-    {
-      name: 'Desk Creativo 01',
-      description: 'Puesto en zona creativa',
-      status: ResourceStatus.AVAILABLE,
-      location: 'Planta 2',
-      type: 'desk',
-      companyId: companies[2].id,
-    },
-    {
-      name: 'Desk Creativo 02',
-      description: 'Puesto en zona creativa',
-      status: ResourceStatus.UNAVAILABLE,
-      location: 'Planta 2',
-      type: 'desk',
-      companyId: companies[2].id,
-    },
   ]);
-  console.log(`📦 ${resources.length} recursos insertados`);
+  console.log(`🏥 ${clinics.length} clínicas insertadas`);
 
-  // ── Reservas ──────────────────────────────────────────────────────────────
-  const h = (hoursFromNow: number) =>
-    new Date(Date.now() + hoursFromNow * 60 * 60 * 1000);
-  const alice = users[4],
-    bob = users[5],
-    carol = users[6],
-    dave = users[7],
-    eve = users[8];
+  // ── Medicamentos ──────────────────────────────────────────────────────────
+  const medications = await medicationRepo.save([
+    { name: 'Ibuprofeno', description: 'Antiinflamatorio', dosageUnit: 'mg', sideEffects: 'Molestias gástricas' },
+    { name: 'Paracetamol', description: 'Analgésico y antipirético', dosageUnit: 'mg' },
+    { name: 'Amoxicilina', description: 'Antibiótico', dosageUnit: 'mg', sideEffects: 'Reacciones alérgicas' },
+    { name: 'Omeprazol', description: 'Protector gástrico', dosageUnit: 'mg' },
+    { name: 'Atorvastatina', description: 'Reductor de colesterol', dosageUnit: 'mg' },
+    { name: 'Metformina', description: 'Antidiabético oral', dosageUnit: 'mg', sideEffects: 'Náuseas' },
+  ]);
+  console.log(`💊 ${medications.length} medicamentos insertados`);
 
-  await reservationRepo.save([
+  // ── Visitas ───────────────────────────────────────────────────────────────
+  const now = new Date();
+  const h = (hours: number) => new Date(now.getTime() + hours * 60 * 60 * 1000);
+  const d = (days: number) => new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+  const visits = await visitRepo.save([
     {
-      userId: alice.id,
-      resourceId: resources[0].id,
-      startTime: h(1),
-      endTime: h(3),
-      status: ReservationStatus.CONFIRMED,
-    },
-    {
-      userId: bob.id,
-      resourceId: resources[1].id,
+      doctorId: doctors[0].id,
+      patientId: patients[0].id,
+      clinicId: clinics[0].id,
+      status: VisitStatus.CONFIRMED,
       startTime: h(2),
-      endTime: h(4),
-      status: ReservationStatus.CONFIRMED,
+      endTime: h(3),
+      notes: 'Revisión cardiológica rutinaria',
     },
     {
-      userId: carol.id,
-      resourceId: resources[5].id,
+      doctorId: doctors[0].id,
+      patientId: patients[1].id,
+      clinicId: clinics[0].id,
+      status: VisitStatus.CONFIRMED,
+      startTime: h(4),
+      endTime: h(5),
+      notes: 'Primera consulta',
+    },
+    {
+      doctorId: doctors[1].id,
+      patientId: patients[2].id,
+      clinicId: clinics[0].id,
+      status: VisitStatus.CONFIRMED,
       startTime: h(24),
-      endTime: h(26),
-      status: ReservationStatus.CONFIRMED,
+      endTime: h(25),
+      notes: 'Seguimiento neurológico',
     },
     {
-      userId: dave.id,
-      resourceId: resources[11].id,
+      doctorId: doctors[2].id,
+      patientId: patients[3].id,
+      clinicId: clinics[1].id,
+      status: VisitStatus.CONFIRMED,
       startTime: h(48),
-      endTime: h(50),
-      status: ReservationStatus.CONFIRMED,
+      endTime: h(49),
     },
     {
-      userId: eve.id,
-      resourceId: resources[3].id,
-      startTime: h(-5),
-      endTime: h(-3),
-      status: ReservationStatus.COMPLETED,
-    },
-    {
-      userId: alice.id,
-      resourceId: resources[6].id,
-      startTime: h(10),
-      endTime: h(12),
-      status: ReservationStatus.CANCELLED,
-    },
-    {
-      userId: bob.id,
-      resourceId: resources[9].id,
+      doctorId: doctors[3].id,
+      patientId: patients[4].id,
+      clinicId: clinics[2].id,
+      status: VisitStatus.CONFIRMED,
       startTime: h(72),
-      endTime: h(74),
-      status: ReservationStatus.CONFIRMED,
+      endTime: h(73),
+      notes: 'Revisión post-operatoria',
     },
     {
-      userId: carol.id,
-      resourceId: resources[2].id,
-      startTime: h(-10),
-      endTime: h(-8),
-      status: ReservationStatus.COMPLETED,
+      doctorId: doctors[0].id,
+      patientId: patients[2].id,
+      clinicId: clinics[0].id,
+      status: VisitStatus.COMPLETED,
+      startTime: h(-48),
+      endTime: h(-47),
+      notes: 'Consulta completada',
+    },
+    {
+      doctorId: doctors[1].id,
+      patientId: patients[0].id,
+      clinicId: clinics[0].id,
+      status: VisitStatus.COMPLETED,
+      startTime: h(-24),
+      endTime: h(-23),
+    },
+    {
+      doctorId: doctors[4].id,
+      patientId: patients[1].id,
+      clinicId: clinics[3].id,
+      status: VisitStatus.CANCELLED,
+      startTime: h(10),
+      endTime: h(11),
+      notes: 'Cancelada por el paciente',
     },
   ]);
-  console.log('📅 Reservas insertadas');
+  console.log(`📅 ${visits.length} visitas insertadas`);
+
+  // ── Ingresos ──────────────────────────────────────────────────────────────
+  const completedVisit1 = visits[5];
+  const completedVisit2 = visits[6];
+
+  const admissions = await admissionRepo.save([
+    {
+      visitId: completedVisit1.id,
+      admissionDate: d(-4),
+      dischargeDate: d(-1),
+      room: '101-A',
+      notes: 'Ingreso por arritmia cardiaca. Alta satisfactoria.',
+    },
+    {
+      visitId: completedVisit2.id,
+      admissionDate: d(-2),
+      room: '205-B',
+      notes: 'Ingreso por crisis neurológica. Pendiente de alta.',
+    },
+  ]);
+  console.log(`🏨 ${admissions.length} ingresos insertados`);
+
+  // ── Administraciones de medicamentos ──────────────────────────────────────
+  await administrationRepo.save([
+    {
+      admissionId: admissions[0].id,
+      medicationId: medications[0].id,
+      administeredAt: d(-4),
+      dosage: 400,
+      notes: 'Primera dosis post-ingreso',
+    },
+    {
+      admissionId: admissions[0].id,
+      medicationId: medications[1].id,
+      administeredAt: d(-3),
+      dosage: 500,
+    },
+    {
+      admissionId: admissions[0].id,
+      medicationId: medications[3].id,
+      administeredAt: d(-2),
+      dosage: 20,
+      notes: 'Protección gástrica',
+    },
+    {
+      admissionId: admissions[1].id,
+      medicationId: medications[1].id,
+      administeredAt: d(-2),
+      dosage: 1000,
+      notes: 'Control de fiebre',
+    },
+    {
+      admissionId: admissions[1].id,
+      medicationId: medications[2].id,
+      administeredAt: d(-1),
+      dosage: 500,
+    },
+  ]);
+  console.log('💉 Administraciones de medicamentos insertadas');
 
   await AppDataSource.destroy();
-  console.log('✅ Seed completado');
+  console.log('✅ Seed completado. Contraseña universal: password123');
 }
 
 seed().catch((err) => {

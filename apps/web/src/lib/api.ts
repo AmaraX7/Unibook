@@ -61,11 +61,12 @@ export async function apiFetch<T>(
   });
 
   // Token expirado → intentar refresh y reintentar
-  if (res.status === 401) {
+if (res.status === 401) {
     const refreshed = await tryRefresh();
     if (refreshed) return apiFetch<T>(endpoint, options);
-    // Si el refresh falla, redirigir a login
-    window.location.href = '/login';
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
     throw new Error('Session expired');
   }
 
