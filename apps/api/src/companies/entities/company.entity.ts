@@ -1,13 +1,6 @@
-// company.entity.ts
-import {
-  Column,
-  Entity,
-  PrimaryGeneratedColumn,
-  CreateDateColumn,
-  OneToMany,
-} from 'typeorm';
-import { Resource } from '../../resources/entities/resource.entity';
-import { User } from '../../users/entities/users.entity';
+import { Column, Entity, PrimaryGeneratedColumn, CreateDateColumn, OneToMany } from 'typeorm';
+import { Clinic } from '../../clinics/entities/clinic.entity'; // ← Resource → Clinic
+import { Person } from '../../persons/entities/person.entity';
 
 @Entity('companies')
 export class Company {
@@ -20,11 +13,11 @@ export class Company {
   @Column({ nullable: true })
   description?: string;
 
-  @OneToMany(() => Resource, (resource) => resource.company)
-  resources!: Resource[];
+  @OneToMany(() => Clinic, (clinic) => clinic.company)
+  clinics!: Clinic[];                                
 
-  @OneToMany(() => User, (user) => user.company)
-  users!: User[];
+  @OneToMany(() => Person, (person) => person.company)
+  persons!: Person[];
 
   @CreateDateColumn()
   createdAt!: Date;

@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ChatbotService } from '../src/chatbot/chatbot.service';
-import { ResourcesService } from '../src/resources/resources.service';
-import { ReservationsService } from '../src/reservations/reservations.service';
+import { ClinicsService } from '../src/clinics/clinics.service';
+import { VisitsService } from '../src/visits/visits.service';
 
 // Mock de GoogleGenerativeAI
 const mockSendMessage = jest.fn().mockResolvedValue({
@@ -42,14 +42,12 @@ describe('ChatbotService', () => {
     }),
   };
 
-  const mockReservationsService = {
-    getAvailability: jest.fn().mockResolvedValue({
-      availableSlots: [
-        { start: '09:00', end: '10:00' },
-        { start: '11:00', end: '12:00' },
-      ],
-    }),
-  };
+const mockReservationsService = {
+  findAll: jest.fn().mockResolvedValue({
+    data: [],
+    total: 0,
+  }),
+};
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -62,11 +60,11 @@ describe('ChatbotService', () => {
           },
         },
         {
-          provide: ResourcesService,
+          provide: ClinicsService,
           useValue: mockResourcesService,
         },
         {
-          provide: ReservationsService,
+          provide: VisitsService,
           useValue: mockReservationsService,
         },
       ],

@@ -1,8 +1,9 @@
-import { UserRole } from '../users/entities/users.entity';
+// jwt-payload.interface.ts
+import { PersonRole } from '../persons/entities/person.entity';
 
 export interface JwtPayload {
   sub: number;
   email: string;
-  role: UserRole;
+  role: PersonRole;
   companyId: number | null;
 }

@@ -6,18 +6,22 @@
 } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ResourcesModule } from './resources/resources.module';
+import { ClinicsModule } from './clinics/clinics.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { UsersModule } from './users/users.module';
+import { PersonsModule } from './persons/persons.module'; // ← nombre correcto
 import { AuthModule } from './auth/auth.module';
-import { ReservationsModule } from './reservations/reservations.module';
+import { VisitsModule } from './visits/visits.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { CompaniesModule } from './companies/companies.module';
 import { ChatbotModule } from './chatbot/chatbot.module';
 import { TelegramModule } from './telegram/telegram.module';
+import { AdmissionsModule } from './admissions/admissions.module';
+import { MedicationsModule } from './medications/medications.module';
+import { AdministrationsModule } from './administrations/administrations.module';
+import { Clinic } from './clinics/entities/clinic.entity';
 
 @Module({
   imports: [
@@ -49,19 +53,26 @@ import { TelegramModule } from './telegram/telegram.module';
       },
     ]),
 
-    ResourcesModule,
 
-    UsersModule,
+    PersonsModule,
 
     AuthModule,
 
-    ReservationsModule,
+    ClinicsModule,
+
+    VisitsModule,
 
     CompaniesModule,
 
     ChatbotModule,
 
     TelegramModule,
+
+    AdmissionsModule,
+
+    MedicationsModule,
+
+    AdministrationsModule,
   ],
   controllers: [AppController],
   providers: [

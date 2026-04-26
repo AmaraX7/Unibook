@@ -1,4 +1,3 @@
-// test/auth.e2e-spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request, { Response } from 'supertest';
@@ -22,19 +21,24 @@ describe('Auth (e2e)', () => {
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
     await app.init();
-
     dataSource = moduleFixture.get(DataSource);
   });
 
   afterAll(async () => {
-    await dataSource.query(`DELETE FROM users WHERE email = 'auth@test.com'`);
+    await dataSource.query(`DELETE FROM persons WHERE email = 'auth@test.com'`);
     await app.close();
   });
 
-  it('POST /auth/register — registra un usuario correctamente', async () => {
+  it('POST /auth/register — registra una persona correctamente', async () => {
     const res: Response = await request(app.getHttpServer())
       .post('/auth/register')
-      .send({ email: 'auth@test.com', password: 'password123' });
+      .send({
+        email: 'auth@test.com',
+        password: 'password123',
+        firstName: 'Test',
+        lastName: 'User',
+        dni: '12345678A',
+      });
 
     expect(res.status).toBe(201);
     expect((res.body as AuthResponse).access_token).toBeDefined();
@@ -44,7 +48,13 @@ describe('Auth (e2e)', () => {
   it('POST /auth/register — rechaza email duplicado', async () => {
     const res: Response = await request(app.getHttpServer())
       .post('/auth/register')
-      .send({ email: 'auth@test.com', password: 'password123' });
+      .send({
+        email: 'auth@test.com',
+        password: 'password123',
+        firstName: 'Test',
+        lastName: 'User',
+        dni: '12345678B',
+      });
 
     expect(res.status).toBe(409);
   });

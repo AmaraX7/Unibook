@@ -1,13 +1,14 @@
+// chatbot.module.ts
 import { Module } from '@nestjs/common';
-import { ChatbotService } from './chatbot.service';
 import { ChatbotController } from './chatbot.controller';
-import { ResourcesModule } from '../resources/resources.module';
-import { ReservationsModule } from '../reservations/reservations.module';
+import { ChatbotService } from './chatbot.service';
+import { ClinicsModule } from '../clinics/clinics.module'; 
+import { VisitsModule } from '../visits/visits.module';     
 
 @Module({
-  imports: [ ResourcesModule, ReservationsModule ],
-  providers: [ChatbotService],
+  imports: [ClinicsModule, VisitsModule],            
   controllers: [ChatbotController],
+  providers: [ChatbotService],
   exports: [ChatbotService],
 })
 export class ChatbotModule {}

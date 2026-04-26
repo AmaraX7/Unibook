@@ -9,10 +9,7 @@ export class RolesGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     // lee los roles requeridos de la metadata del endpoint (@Roles('admin'))
     // peero si no hay roles definidos, deja pasar a cualquiera
-    const requiredRoles = this.reflector.get<string[]>(
-      'roles',
-      context.getHandler(),
-    );
+    const requiredRoles = this.reflector.get<string[]>('roles',context.getHandler(),);
     if (!requiredRoles) return true;
 
     // Extrae el usuario del request — lo puso JwtStrategy en req.userId

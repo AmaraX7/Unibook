@@ -1,4 +1,3 @@
-// test/companies.e2e-spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request, { Response } from 'supertest';
@@ -34,17 +33,24 @@ describe('Companies (e2e)', () => {
 
     const hashedPassword = await bcrypt.hash('password123', 10);
     await dataSource.query(
-    `INSERT INTO users (email, password, role) VALUES ('superadmin@companiestest.com', '${hashedPassword}', 'super_admin')`,
+      `INSERT INTO persons ("firstName", "lastName", email, password, dni, role) VALUES ('Super', 'Admin', 'superadmin@companiestest.com', '${hashedPassword}', 'SADMCOMPST1', 'super_admin')`,
     );
 
     const superRes: Response = await request(app.getHttpServer())
-    .post('/auth/login')
-    .send({ email: 'superadmin@companiestest.com', password: 'password123' });
+      .post('/auth/login')
+      .send({ email: 'superadmin@companiestest.com', password: 'password123' });
     superAdminToken = (superRes.body as AuthResponse).access_token;
 
     await request(app.getHttpServer())
       .post('/auth/register')
-      .send({ email: 'user@companiestest.com', password: 'password123' });
+      .send({
+        email: 'user@companiestest.com',
+        password: 'password123',
+        firstName: 'Test',
+        lastName: 'User',
+        dni: 'USRCOMPST01',
+      });
+
     const userRes: Response = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email: 'user@companiestest.com', password: 'password123' });
@@ -52,7 +58,7 @@ describe('Companies (e2e)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DELETE FROM users WHERE email LIKE '%companiestest.com'`);
+    await dataSource.query(`DELETE FROM persons WHERE email LIKE '%companiestest.com'`);
     if (companyId) {
       await dataSource.query(`DELETE FROM companies WHERE id = ${companyId}`);
     }

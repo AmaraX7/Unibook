@@ -1,23 +1,22 @@
+import Cookies from 'js-cookie';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-// --- Helpers de token ---
 export function getAccessToken() {
-  return localStorage.getItem('access_token');
+  return Cookies.get('access_token');
 }
-
 export function getRefreshToken() {
-  return localStorage.getItem('refresh_token');
+  return Cookies.get('refresh_token');
 }
-
 export function saveTokens(accessToken: string, refreshToken: string) {
-  localStorage.setItem('access_token', accessToken);
-  localStorage.setItem('refresh_token', refreshToken);
+  Cookies.set('access_token', accessToken, { expires: 1/96 }); // 15 minutos
+  Cookies.set('refresh_token', refreshToken, { expires: 7 }); // 7 días
+}
+export function clearTokens() {
+  Cookies.remove('access_token');
+  Cookies.remove('refresh_token');
 }
 
-export function clearTokens() {
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
-}
 
 // --- Refresh automático ---
 async function tryRefresh(): Promise<boolean> {

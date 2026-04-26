@@ -4,46 +4,42 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { UsersService } from '../users/users.service';
+import { PersonsService } from '../persons/persons.service'; // ← nombre correcto
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { JwtPayload } from './jwt-payload.interface';
+import { CreatePersonDto } from '../persons/dto/create-person.dto';
+import { PersonRole } from '../persons/entities/person.entity';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    private readonly usersService: UsersService,
+    private readonly personsService: PersonsService, // ← cambiado
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
 
-  private generateTokens(user: {
-    id: number;
-    email: string;
-    role: string;
-    companyId: number | null;
-  }) {
-    // para decirle como espero que sea el user q recibo
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      companyId: user.companyId ?? null,
+  private generateTokens(person: { id: number; email: string; role: PersonRole; companyId: number | null }) {
+    const payload: JwtPayload = {
+      sub: person.id,
+      email: person.email,
+      role: person.role,
+      companyId: person.companyId,
     };
-
-    const access_token = this.jwtService.sign(payload); // usa config del módulo
-
-    const refresh_token = this.jwtService.sign(payload, {
-      secret: this.configService.get('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get('JWT_REFRESH_EXPIRES_IN'),
-    });
-
-    return { access_token, refresh_token };
+    return {
+      access_token: this.jwtService.sign(payload, {
+        secret: this.configService.get('JWT_SECRET'),
+        expiresIn: '15m',
+      }),
+      refresh_token: this.jwtService.sign(payload, {
+        secret: this.configService.get('JWT_REFRESH_SECRET'),
+        expiresIn: '7d',
+      }),
+    };
   }
 
   async refreshTokens(token: string) {
@@ -51,9 +47,9 @@ export class AuthService {
       const payload = this.jwtService.verify<JwtPayload>(token, {
         secret: this.configService.get('JWT_REFRESH_SECRET'),
       });
-      const user = await this.usersService.findByEmail(payload.email);
-      if (!user) throw new UnauthorizedException('Invalid refresh token');
-      return this.generateTokens(user);
+      const person = await this.personsService.findByEmail(payload.email); // ← cambiado
+      if (!person) throw new UnauthorizedException('Invalid refresh token');
+      return this.generateTokens(person);
     } catch (error) {
       this.logger.warn(
         `Refresh token failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -62,31 +58,31 @@ export class AuthService {
     }
   }
 
-  async register(dto: RegisterDto) {
+  async register(dto: CreatePersonDto) {
     this.logger.log(`Register attempt email=${dto.email}`);
-    const existing = await this.usersService.findByEmail(dto.email);
+    const existing = await this.personsService.findByEmail(dto.email); // ← cambiado
     if (existing) throw new ConflictException('Email already in use');
 
-    const user = await this.usersService.createUser(dto);
-    this.logger.log(`Register success userId=${user.id}`);
-    return this.generateTokens(user);
+    const person = await this.personsService.createPerson(dto); // ← cambiado
+    this.logger.log(`Register success personId=${person.id}`);
+    return this.generateTokens(person);
   }
 
   async login(dto: LoginDto) {
     this.logger.log(`Login attempt email=${dto.email}`);
-    const user = await this.usersService.findByEmailWithPassword(dto.email);
-    if (!user) {
+    const person = await this.personsService.findByEmailWithPassword(dto.email); // ← cambiado
+    if (!person) {
       this.logger.warn(`Login failed (email not found) email=${dto.email}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, user.password);
+    const isPasswordValid = await bcrypt.compare(dto.password, person.password);
     if (!isPasswordValid) {
       this.logger.warn(`Login failed (bad password) email=${dto.email}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    this.logger.log(`Login success userId=${user.id}`);
-    return this.generateTokens(user);
+    this.logger.log(`Login success personId=${person.id}`);
+    return this.generateTokens(person);
   }
 }
