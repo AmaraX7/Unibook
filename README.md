@@ -1,6 +1,6 @@
 # Unibook
 
-Plataforma para gestionar reservas de espacios de coworking. Las empresas administran sus recursos y usuarios; los usuarios finales descubren y reservan mesas, salas y otros espacios por franjas horarias.
+API REST y frontend para gestionar una **cadena de clínicas médicas**. Permite administrar doctores, pacientes, visitas, ingresos hospitalarios y medicación, con detección automática de solapamientos por doctor y aislamiento multi-tenant por empresa.
 
 **API en producción**: https://unibook-api.onrender.com  
 **Swagger**: https://unibook-api.onrender.com/api
@@ -12,10 +12,12 @@ Plataforma para gestionar reservas de espacios de coworking. Las empresas admini
 ```
 Unibook/
 ├── apps/
-│   ├── api/     # Backend REST (NestJS + PostgreSQL) — completo y desplegado
-│   └── web/     # Frontend (Next.js) — en desarrollo
+│   ├── api/     # Backend REST (NestJS + PostgreSQL)
+│   └── web/     # Frontend (Next.js App Router)
 └── README.md
 ```
+
+Documentación técnica completa del backend: **[apps/api/README.md](apps/api/README.md)**
 
 ---
 
@@ -23,22 +25,23 @@ Unibook/
 
 | Capa | Tecnologías |
 |------|-------------|
-| **API** | NestJS, TypeScript, PostgreSQL, TypeORM, JWT, Swagger, Docker |
+| **API** | NestJS, TypeScript, PostgreSQL, TypeORM, JWT, Swagger, Jest |
 | **Web** | Next.js, React, TypeScript, Tailwind CSS, shadcn/ui |
-| **Deploy** | Render (API) + Supabase (base de datos) |
+| **IA / Bots** | Gemini 2.5 Flash, Telegraf (Telegram) |
+| **Deploy** | Docker, Render, Supabase |
 
 ---
 
-## Funcionalidades (API)
+## Funcionalidades principales
 
-- Modelo **multi-tenant** por empresa (`Company`)
-- Gestión de recursos (mesa, sala, cabina, parking, etc.) con un único modelo `Resource`
-- Reservas con detección de solapamientos y **bloqueo pesimista** en transacción
-- Autenticación **JWT** con access token y refresh token
-- Control de acceso por roles: `USER`, `COMPANY_ADMIN`, `SUPER_ADMIN`
-- Paginación, rate limiting, migraciones TypeORM y tests E2E en CI
-
-Para la documentación completa de endpoints, arquitectura, seed y variables de entorno, consulta **[apps/api/README.md](apps/api/README.md)**.
+- **Multi-tenancy** por `Company` con roles `PATIENT`, `DOCTOR`, `CLINIC_ADMIN` y `SUPER_ADMIN`
+- **Personas** con herencia de tabla (`Doctor`, `Patient`, `Staff`)
+- **Clínicas**, **visitas médicas** con bloqueo pesimista ante solapamientos
+- **Ingresos** vinculados a visitas y **administración de medicamentos**
+- **Chatbot** con contexto dinámico (clínicas y visitas del día)
+- **Bot de Telegram** integrado con el chatbot
+- **Auth** con JWT + refresh tokens en cookies HttpOnly
+- Tests E2E, CI con GitHub Actions, migraciones TypeORM y despliegue en Render
 
 ---
 
@@ -46,9 +49,22 @@ Para la documentación completa de endpoints, arquitectura, seed y variables de 
 
 | Rol | Permisos |
 |-----|----------|
-| `USER` | Registro, login, crear y gestionar sus reservas |
-| `COMPANY_ADMIN` | Todo lo anterior + gestionar recursos y usuarios de su empresa |
-| `SUPER_ADMIN` | Acceso total: empresas, usuarios, recursos y reservas |
+| `PATIENT` | Ver sus visitas, consultar disponibilidad de doctores |
+| `DOCTOR` | Gestionar visitas, ingresos y medicación de sus pacientes |
+| `CLINIC_ADMIN` | Gestionar clínicas y personas de su empresa |
+| `SUPER_ADMIN` | Acceso total al sistema |
+
+---
+
+## Estado del proyecto
+
+### Backend — completado
+Auth, personas, clínicas, visitas, ingresos, medicamentos, administraciones, empresas, chatbot, Telegram, Swagger, Docker, CI/CD y despliegue.
+
+### Frontend — en progreso
+- Login / Register con cookies HttpOnly y refresh automático
+- Dashboard doctor (visitas, ingresos, crear visita, detalle)
+- Pendiente: dashboards por rol, panel de medicación, perfil de usuario
 
 ---
 
@@ -70,22 +86,20 @@ npm install
 npm run start:dev
 ```
 
-La API queda en **http://localhost:3001**. Puedes poblar datos de prueba con `make seed` (contraseña por defecto: `password123`).
+La API queda en **http://localhost:3001**.
 
-### Web (en desarrollo)
+### Web
 
 ```bash
 cd apps/web
 npm install
 ```
 
-Crea un `.env.local` con la URL de la API:
+Crea `.env.local`:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
-
-Luego:
 
 ```bash
 npm run dev
@@ -93,13 +107,11 @@ npm run dev
 
 La app se abre en **http://localhost:3000**.
 
-> **Estado del frontend:** la integración con la API está empezada (cliente HTTP con refresh automático, pantalla de login). El dashboard y el resto de flujos están pendientes.
-
 ---
 
 ## CI
 
-En cada push/PR a `main` se ejecutan los tests E2E del backend contra PostgreSQL (ver [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+En cada push/PR a `main` se ejecutan los tests E2E del backend (ver [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ---
 

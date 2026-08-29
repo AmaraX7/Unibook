@@ -1,232 +1,363 @@
-# Unibook API
+# Unibook API — Sistema de Gestión Clínica
 
-REST API for managing coworking space reservations. Companies manage their own spaces and users; end users discover and book available resources by time slot. Built with NestJS, PostgreSQL, and deployed on Render + Supabase.
+API REST para gestionar una cadena de clínicas médicas. Permite gestionar doctores, pacientes, visitas médicas e ingresos hospitalarios, incluyendo la administración de medicamentos durante los ingresos. El sistema detecta conflictos de solapamiento de visitas por doctor automáticamente y aplica aislamiento multi-tenant por empresa.
 
-**Production**: https://unibook-api.onrender.com  
-**Swagger docs**: https://unibook-api.onrender.com/api
+**Producción**: https://unibook-api.onrender.com  
+**Swagger**: https://unibook-api.onrender.com/api
 
 ---
 
 ## Stack
 
 - **Framework**: NestJS (Node.js + TypeScript)
-- **Database**: PostgreSQL + TypeORM
-- **Auth**: JWT with Passport (access token + refresh token)
-- **Validation**: class-validator + class-transformer
-- **Documentation**: Swagger (@nestjs/swagger)
+- **Base de datos**: PostgreSQL con TypeORM
+- **Auth**: JWT con Passport + refresh tokens
+- **Validación**: class-validator + class-transformer
+- **Documentación**: Swagger automático (@nestjs/swagger)
 - **Rate limiting**: @nestjs/throttler
-- **Deployment**: Docker + Render + Supabase
+- **Tests**: Jest
+- **Despliegue**: Docker + Render + Supabase
 
 ---
 
-## Architecture decisions
+## URLs
 
-**Multi-tenant company model** — each `Resource` and `User` belongs to a `Company`. A `COMPANY_ADMIN` can only manage resources and users within their own company. A `SUPER_ADMIN` manages everything across all companies. Tenant isolation is enforced at the service layer using `ForbiddenException`, not at the database level.
-
-**Single resource entity** — all resource types (desk, meeting room, phone booth, lounge, parking) share a single `Resource` entity with a `type` field. Subclasses were considered and discarded: if everything is reserved the same way, they are not different classes — they are the same object with a different type. Adding a new resource type requires zero code changes.
-
-**JWT authentication with refresh tokens** — stateless auth with short-lived access tokens (`JWT_EXPIRES_IN`) and long-lived refresh tokens (`JWT_REFRESH_EXPIRES_IN`). The token payload includes `userId`, `email`, `role`, and `companyId` so tenant filtering requires no extra database lookups. When the access token expires, the client calls `POST /auth/refresh` to get a new pair without requiring the user to log in again.
-
-**Role-based access control** — custom `RolesGuard` reads metadata set by the `@Roles()` decorator via `Reflector`. Three roles exist: `USER`, `COMPANY_ADMIN`, and `SUPER_ADMIN`. The guard compares `req.user.role` against the required roles; if none are defined, the route is public.
-
-**Overlap detection with pessimistic locking** — when creating a reservation, the system queries for any `CONFIRMED` reservation on the same resource where `startTime < other.endTime AND endTime > other.startTime`. The check runs inside a database transaction with a `pessimistic_write` lock, preventing race conditions where two concurrent requests could both pass the overlap check and create conflicting reservations.
-
-**Manual transaction management** — reservation creation uses `QueryRunner` directly (`connect → startTransaction → commit/rollback → release`) to guarantee atomicity across the overlap check and the insert.
-
-**Pagination** — `GET /resources` and `GET /reservations/all` accept `?page` and `?limit` query parameters. Results are returned as `{ data: [...], total }` so clients can calculate page counts client-side.
-
-**Database migrations** — `synchronize: false` in production. Migrations run automatically on deploy via the Dockerfile `CMD`.
-
-**Global exception filter** — all errors return a consistent JSON format: `statusCode`, `message`, `timestamp`, `path`.
-
-**Rate limiting** — `@nestjs/throttler` limits requests per IP across all endpoints. The `/health` route is excluded via `@SkipThrottle()`.
+| Entorno | URL |
+|---------|-----|
+| API | https://unibook-api.onrender.com |
+| Swagger | https://unibook-api.onrender.com/api |
 
 ---
 
-## Roles
+## Estructura de módulos
 
-| Role | Permissions |
-|------|-------------|
-| `USER` | Register, login, create reservations, view and cancel own reservations, manage own account |
-| `COMPANY_ADMIN` | Everything USER can do + manage resources and users within their company, view reservations for their company's resources |
-| `SUPER_ADMIN` | Full access — manage all companies, users, resources, and reservations |
+```text
+src/
+├── app.module.ts
+├── main.ts
+├── auth/
+│   ├── auth.module.ts
+│   ├── auth.controller.ts
+│   ├── auth.service.ts
+│   ├── jwt.strategy.ts
+│   ├── jwt-auth.guard.ts
+│   ├── roles.guard.ts
+│   ├── roles.decorator.ts
+│   ├── jwt-payload.interface.ts
+│   ├── request-with-user.interface.ts
+│   └── dto/
+│       ├── login.dto.ts
+│       └── refresh.dto.ts
+├── companies/
+├── persons/
+│   └── entities/
+│       ├── person.entity.ts
+│       ├── doctor.entity.ts
+│       ├── patient.entity.ts
+│       └── staff.entity.ts
+├── clinics/
+├── visits/
+├── admissions/
+├── medications/
+├── administrations/
+├── chatbot/
+├── telegram/
+├── common/
+│   ├── filters/http-exception.filter.ts
+│   ├── middleware/logger.middleware.ts
+│   └── dto/pagination.dto.ts
+├── migrations/
+└── seed.ts
+```
 
 ---
 
-## Endpoints
+## Entidades principales
+
+### Company
+- `id`, `name`, `description`, `createdAt`
+- Relación: tiene muchas `Clinic`, tiene muchas `Person`
+
+### Person (TableInheritance — tabla única con discriminador `role`)
+- `id`, `firstName`, `lastName`, `email`, `password`, `dni`, `phone`, `birthDate`, `role`, `companyId`, `createdAt`, `deletedAt`
+- Subclases: `Doctor`, `Patient`, `Staff`
+
+### Doctor (ChildEntity de Person)
+- Añade: `specialty`, `licenseNumber`, `yearsOfExperience`
+
+### Patient (ChildEntity de Person)
+- Añade: `bloodType`, `allergies`, `insuranceNumber`
+
+### Staff (ChildEntity de Person — CLINIC_ADMIN)
+- Añade: `position`
+
+### Clinic
+- `id`, `name`, `description`, `address`, `specialty`, `capacity` (nullable), `companyId`, `createdAt`
+- Relación: pertenece a `Company`, tiene muchas `Visit`
+
+### Visit (asociativa: Doctor + Patient + Clinic)
+- `id`, `doctorId`, `patientId`, `clinicId`, `startTime`, `endTime`, `status`, `createdAt`
+- `status` enum: `CONFIRMED` | `CANCELLED` | `COMPLETED`
+- Relación: puede tener un `Admission` (OneToOne opcional)
+
+### Admission (especialización de Visit vía OneToOne)
+- `id`, `visitId`, `admissionDate`, `dischargeDate` (nullable), `room`, `notes`, `createdAt`, `deletedAt`
+- Relación: pertenece a `Visit`, tiene muchas `Administration`
+
+### Medication
+- `id`, `name`, `description`, `dosageUnit`, `sideEffects`
+- Relación: tiene muchas `Administration`
+
+### Administration (ternaria resuelta: Admission + Medication + fecha)
+- `id`, `admissionId`, `medicationId`, `administeredAt`, `dosage`, `notes`, `createdAt`
+
+---
+
+## Decisiones de arquitectura
+
+- **Herencia de personas con TableInheritance** — existe una única tabla `persons` con columna discriminadora `role`. `Doctor`, `Patient` y `Staff` son subclases (`@ChildEntity`) con campos específicos. Evita joins innecesarios y centraliza la autenticación.
+- **JWT stateless con refresh tokens** — access token de vida corta (15m), refresh token de vida larga (7d) con secret distinto. `POST /auth/refresh` renueva el par sin requerir login. El token contiene `id`, `email`, `role` y `companyId`.
+- **RolesGuard + @Roles decorator** — el decorador guarda el rol requerido como metadata; el guard lo lee con `Reflector` y compara con `req.user.role`.
+- **Detección de solapamiento con bloqueo pesimista** — query con `LessThan`/`MoreThan` sobre visitas `CONFIRMED` del mismo doctor, dentro de una transacción con `pessimistic_write` lock para evitar race conditions.
+- **QueryRunner para visitas** — el método `create` usa transacción manual (`connect → startTransaction → commit/rollback → release`) para garantizar atomicidad.
+- **Paginación con findAndCount** — los listados aceptan `?page` y `?limit`, devuelven `{ data, total }`.
+- **Migraciones con synchronize: false en producción** — las migraciones corren automáticamente en el `CMD` del Dockerfile al desplegar.
+- **Filtro global de excepciones** — todas las respuestas de error tienen el mismo formato: `statusCode`, `message`, `timestamp`, `path`.
+- **Rate limiting** — `@nestjs/throttler` limita requests por IP (20 req/60s).
+- **Multi-tenancy con Company** — cada `Clinic` pertenece a una `Company`. `CLINIC_ADMIN` solo puede gestionar clínicas y personas de su empresa. `SUPER_ADMIN` gestiona todo. El aislamiento se aplica en el Service con `ForbiddenException`.
+- **companyId en JWT** — el token incluye `id`, `email`, `role` y `companyId` para filtrar por empresa sin consultar la BD.
+- **Ingreso solo desde visita válida** — no se puede crear un `Admission` desde una visita `CANCELLED`. Se verifica en el service antes de persistir.
+- **Validación de fechas de administración** — `administeredAt` debe estar dentro del rango `admissionDate → dischargeDate` del ingreso. Se valida en create y update.
+- **Soft delete en Person y Admission** — se usa `@DeleteDateColumn` para no romper el historial de visitas e ingresos.
+- **Chatbot con Gemini 2.5 Flash** — integración con `@google/generative-ai`. Usa `startChat` para mantener historial por sesión. El system prompt se construye dinámicamente con datos reales de clínicas y visitas del día.
+- **SessionId como clave de conversación** — el cliente genera un `sessionId` (UUID o id de Telegram). El backend guarda las sesiones en un `Map<string, any>` en memoria. Suficiente para MVP.
+- **Caché en memoria para el chatbot** — clínicas se cachean 5 minutos, disponibilidad 1 minuto. Sin Redis.
+- **Bot de Telegram con Telegraf** — `TelegramModule` con `TelegramService` que implementa `OnModuleInit`. Usa el id de Telegram del usuario como `sessionId`, conectando con `ChatbotService`.
+- **JWT con cookies HttpOnly** — access token (15m) y refresh token (7d) almacenados en cookies HttpOnly, Secure, SameSite=Lax generadas por el backend. El frontend usa `credentials: 'include'` y no accede a los tokens desde JavaScript.
+
+---
+
+## Endpoints principales
 
 ### Auth
 
-| Method | Endpoint | Description | Auth |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/auth/register` | Crear cuenta |
+| POST | `/auth/login` | Obtener JWT |
+| POST | `/auth/refresh` | Renovar access token |
+
+### Persons
+
+| Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | /auth/register | Create a new account | Public |
-| POST | /auth/login | Login and get tokens | Public |
-| POST | /auth/refresh | Refresh access token | Public |
+| GET | `/persons/me` | Perfil propio | JWT |
+| PATCH | `/persons/me` | Actualizar perfil propio | JWT |
+| DELETE | `/persons/me` | Eliminar cuenta propia | JWT |
+| GET | `/persons` | Listar personas | SUPER_ADMIN / CLINIC_ADMIN |
+| GET | `/persons/by-email?email=` | Buscar por email | SUPER_ADMIN |
+| PATCH | `/persons/:id/role` | Cambiar rol | SUPER_ADMIN / CLINIC_ADMIN |
+| DELETE | `/persons/:id` | Eliminar persona | SUPER_ADMIN / CLINIC_ADMIN |
 
-### Companies
+### Clinics
 
-| Method | Endpoint | Description | Auth |
+| Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | /companies | Create a company | SUPER_ADMIN |
-| GET | /companies | List all companies | SUPER_ADMIN |
-| GET | /companies/:id | Get company detail | SUPER_ADMIN |
-| PATCH | /companies/:id | Update a company | SUPER_ADMIN |
-| DELETE | /companies/:id | Delete a company | SUPER_ADMIN |
+| GET | `/clinics?page=1&limit=10` | Listar clínicas paginadas | Público |
+| GET | `/clinics/:id` | Detalle de clínica | Público |
+| POST | `/clinics` | Crear clínica | SUPER_ADMIN / CLINIC_ADMIN |
+| PATCH | `/clinics/:id` | Actualizar clínica | SUPER_ADMIN / CLINIC_ADMIN |
+| DELETE | `/clinics/:id` | Eliminar clínica | SUPER_ADMIN / CLINIC_ADMIN |
 
-### Users
+### Visits
 
-| Method | Endpoint | Description | Auth |
+| Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| GET | /users/me | Get own profile | User |
-| PATCH | /users/me | Update own profile | User |
-| DELETE | /users/me | Delete own account | User |
-| GET | /users | List users (SUPER_ADMIN: all, COMPANY_ADMIN: own company) | SUPER_ADMIN / COMPANY_ADMIN |
-| GET | /users?email= | Find user by email | SUPER_ADMIN |
-| PATCH | /users/:id/role | Update user role | SUPER_ADMIN / COMPANY_ADMIN |
-| DELETE | /users/:id | Delete a user | SUPER_ADMIN / COMPANY_ADMIN |
+| POST | `/visits` | Crear visita con check de solapamiento | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| GET | `/visits` | Listar todas las visitas paginadas | SUPER_ADMIN / CLINIC_ADMIN |
+| GET | `/visits/my-visits` | Mis visitas como doctor o paciente | JWT |
+| GET | `/visits/patient/:id` | Visitas de un paciente | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| GET | `/visits/doctor/:id` | Visitas de un doctor | SUPER_ADMIN / CLINIC_ADMIN |
+| GET | `/visits/doctor/:id/availability?date=` | Disponibilidad por fecha | JWT |
+| GET | `/visits/:id` | Detalle de visita | JWT |
+| PATCH | `/visits/:id/status` | Actualizar estado | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
 
-### Resources
+### Admissions
 
-| Method | Endpoint | Description | Auth |
+| Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| GET | /resources?page=1&limit=10 | List resources, filter by ?companyId | Public |
-| GET | /resources/:id | Get resource detail | Public |
-| POST | /resources | Create a resource | SUPER_ADMIN / COMPANY_ADMIN |
-| PATCH | /resources/:id | Update a resource | SUPER_ADMIN / COMPANY_ADMIN |
-| DELETE | /resources/:id | Delete a resource | SUPER_ADMIN / COMPANY_ADMIN |
+| POST | `/admissions` | Crear ingreso desde visita | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| GET | `/admissions` | Listar todos los ingresos | SUPER_ADMIN / CLINIC_ADMIN |
+| GET | `/admissions/visit/:visitId` | Ingreso de una visita | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| GET | `/admissions/:id` | Detalle de ingreso | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| PATCH | `/admissions/:id` | Actualizar ingreso | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| PATCH | `/admissions/:id/discharge` | Dar de alta al paciente | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
 
-### Reservations
+### Medications
 
-| Method | Endpoint | Description | Auth |
+| Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | /reservations | Create a reservation | User |
-| GET | /reservations/me | Get own reservations | User |
-| GET | /reservations/:id | Get reservation detail | User |
-| PATCH | /reservations/:id/status | Update reservation status | User / COMPANY_ADMIN |
-| GET | /reservations/all?page=1&limit=10 | Get all reservations | SUPER_ADMIN / COMPANY_ADMIN |
+| POST | `/medications` | Crear medicamento | SUPER_ADMIN / CLINIC_ADMIN |
+| GET | `/medications` | Listar medicamentos | JWT |
+| GET | `/medications/:id` | Detalle de medicamento | JWT |
+| PATCH | `/medications/:id` | Actualizar medicamento | SUPER_ADMIN / CLINIC_ADMIN |
+| DELETE | `/medications/:id` | Eliminar medicamento | SUPER_ADMIN |
+
+### Administrations
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-------------|------|
+| POST | `/administrations` | Registrar administración | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| GET | `/administrations` | Listar todas | SUPER_ADMIN / CLINIC_ADMIN |
+| GET | `/administrations/admission/:admissionId` | Por ingreso | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| GET | `/administrations/:id` | Detalle | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| PATCH | `/administrations/:id` | Actualizar | SUPER_ADMIN / CLINIC_ADMIN / DOCTOR |
+| DELETE | `/administrations/:id` | Eliminar | SUPER_ADMIN / CLINIC_ADMIN |
+
+### Companies (todos SUPER_ADMIN)
+
+| Método | Endpoint |
+|--------|----------|
+| POST | `/companies` |
+| GET | `/companies` |
+| GET | `/companies/:id` |
+| PATCH | `/companies/:id` |
+| DELETE | `/companies/:id` |
 
 ---
 
-## Business logic
+## Lógica de negocio
 
-### Creating a reservation
+### Al crear una visita
 
-1. Verify the resource exists (inside the transaction)
-2. Verify `startTime < endTime`
-3. Acquire a pessimistic write lock and check for overlapping `CONFIRMED` reservations on the same resource
-4. If no conflict → status set to `CONFIRMED` automatically, transaction committed
-5. If conflict → `400 Bad Request`, transaction rolled back
+1. Verificar que la clínica existe (dentro de la transacción)
+2. Verificar que `startTime < endTime`
+3. Verificar solapamiento con lock pesimista: `startTime < otraVisita.endTime AND endTime > otraVisita.startTime`
+4. Si ok → `status CONFIRMED` automáticamente + commit
+5. Si solapamiento → `BadRequestException` + rollback
 
-### Updating reservation status
+### Al actualizar estado de visita
 
-- `CANCELLED` → only the reservation owner
-- `COMPLETED` → `COMPANY_ADMIN` or `SUPER_ADMIN` only
-- `CONFIRMED` → cannot be set manually; assigned automatically on creation
+- `CANCELLED` → solo `CLINIC_ADMIN` o `DOCTOR`
+- `COMPLETED` → solo `CLINIC_ADMIN` o `SUPER_ADMIN`
+- `CONFIRMED` → no se puede asignar manualmente
 
-### Company admin isolation
+### Al crear un ingreso
 
-- `COMPANY_ADMIN` creating a resource always has `companyId` forced from their JWT — the request body value is ignored
-- `COMPANY_ADMIN` updating or deleting a resource from another company receives `403 Forbidden`
-- `COMPANY_ADMIN` managing users outside their company receives `403 Forbidden`
-- `COMPANY_ADMIN` cannot assign the `SUPER_ADMIN` role to any user
+- Solo desde una visita no `CANCELLED`
+- No puede existir más de un ingreso por visita
+- `dischargeDate` no puede ser anterior a `admissionDate`
 
-### Token flow
+### Al registrar administración de medicamento
 
-1. `POST /auth/login` returns `{ access_token, refresh_token }`
-2. Use `access_token` in the `Authorization: Bearer` header for all protected routes
-3. When `access_token` expires and a `401` is received, send `refresh_token` to `POST /auth/refresh`
-4. Store the new token pair and retry the original request — the user never notices
+- `administeredAt` debe estar dentro del rango `admissionDate → dischargeDate` del ingreso
+- Se valida tanto en create como en update
+
+### Refresh tokens
+
+- `access_token`: vida corta (15m)
+- `refresh_token`: vida larga (7d), secret distinto (`JWT_REFRESH_SECRET`)
+- `POST /auth/refresh` verifica el refresh token y devuelve tokens nuevos sin necesidad de login
+
+### Roles
+
+| Rol | Permisos |
+|-----|----------|
+| `PATIENT` | Ver sus propias visitas, consultar disponibilidad de doctores |
+| `DOCTOR` | Ver sus visitas, crear y gestionar visitas, registrar ingresos y medicación |
+| `CLINIC_ADMIN` | Gestionar clínicas y personas de su empresa, ver visitas de su empresa |
+| `SUPER_ADMIN` | Acceso total: empresas, clínicas, personas, medicamentos |
 
 ---
 
-## Run locally
+## Arranque local
 
-### With Docker (recommended)
+### Con Docker (recomendado)
 
 ```bash
-git clone https://github.com/your-username/unibook-api
-cd unibook-api
-cp .env.example .env   # fill in your values
+cd apps/api
+cp .env.example .env
 make up
 ```
 
-### Without Docker
+### Sin Docker
 
 ```bash
 npm install
 npm run start:dev
 ```
 
-### Useful Makefile commands
+### Comandos útiles (Makefile)
 
 ```bash
 make up                # docker-compose up --build
 make down              # docker-compose down
-make down-v            # docker-compose down -v (wipes database)
+make down-v            # docker-compose down -v (borra la BD)
 make logs              # docker-compose logs -f
 make dev               # npm run start:dev
-make migration-generate name=MigrationName
+make seed              # poblar BD local
+make seed-docker       # seed en contenedor Docker
+make migration-generate name=NombreMigracion
 make migration-run
 make migration-revert
-make seed              # seed local database
-make seed-docker       # seed database running in Docker
 ```
 
 ---
 
-## Seed
-
-Inserts 3 companies, 9 users (1 super admin, 3 company admins, 5 regular users), 15 resources, and 8 reservations for local testing. All passwords are `password123`.
-
-| Email | Role | Company |
-|-------|------|---------|
-| super@admin.com | SUPER_ADMIN | — |
-| admin@wework.com | COMPANY_ADMIN | WeWork Barcelona |
-| admin@spaces.com | COMPANY_ADMIN | Spaces Diagonal |
-| admin@mob.com | COMPANY_ADMIN | MOB Makers |
-| alice@gmail.com | USER | — |
-| bob@gmail.com | USER | — |
-
----
-
-## Environment variables
+## Variables de entorno
 
 ```env
 DB_HOST=localhost
 DB_PORT=5433
 DB_USERNAME=postgres
-DB_PASSWORD=your_password
-DB_NAME=your_db_name
-JWT_SECRET=a_long_secret_key
+DB_PASSWORD=tu_password
+DB_NAME=tu_db
+JWT_SECRET=una_clave_secreta_larga
 JWT_EXPIRES_IN=15m
-JWT_REFRESH_SECRET=a_different_long_secret_key
+JWT_REFRESH_SECRET=otro_secret_diferente_largo
 JWT_REFRESH_EXPIRES_IN=7d
 PORT=3001
+GEMINI_API_KEY=tu_gemini_key
+TELEGRAM_BOT_TOKEN=tu_telegram_token
 ```
 
 ---
 
-## Run migrations
+## Estado actual
 
-```bash
-make migration-run
-# or directly:
-npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts
-```
+### Completado
+
+- Auth completo (register, login, JWT, guards, roles, refresh tokens)
+- Persons (TableInheritance: Person, Doctor, Patient, Staff)
+- Clinics (CRUD, paginación, multi-tenancy)
+- Visits (solapamiento, bloqueo pesimista, disponibilidad por doctor)
+- Admissions (crear, actualizar, dar de alta)
+- Medications y Administrations
+- Companies (CRUD, solo SUPER_ADMIN)
+- Filtro global de excepciones, Swagger, rate limiting, logs
+- Docker + Render + Supabase, migraciones TypeORM, Makefile
+- Tests Jest E2E, CI/CD con GitHub Actions
+- Chatbot IA con Gemini 2.5 Flash
+- Bot de Telegram con Telegraf
+- Monorepo (`apps/api` + `apps/web`)
+
+### Pendiente
+
+- [ ] Chatbot adaptado al dominio médico
+- [ ] Seed con datos médicos realistas
+- [ ] Actualizar tests E2E con nuevo dominio
+- [ ] Dashboards por rol en frontend (patient/admin/super)
+- [ ] Panel de medicación y perfil de usuario
+- [ ] Despliegue final del frontend
 
 ---
 
-## Project structure
+## Reglas de desarrollo
 
-```
-src/
-├── auth/           # JWT auth, guards, roles decorator, refresh token logic
-├── companies/      # Company entity, service, controller (SUPER_ADMIN only)
-├── users/          # User entity, service, controller, /me endpoints
-├── resources/      # Resource entity, service, controller, company isolation
-├── reservations/   # Reservation entity, overlap logic, pessimistic locking
-├── common/         # Global exception filter, pagination DTO
-├── migrations/     # TypeORM migrations
-├── data-source.ts  # TypeORM DataSource config
-└── seed.ts         # Database seeder for local development
-```
+- DTOs con validadores en todos los endpoints
+- Nunca exponer `password` en ninguna respuesta
+- Manejar errores con excepciones de NestJS
+- Separar lógica de negocio en el Service
+- Variables de entorno en `.env`
+- Swagger en todos los endpoints
+- Migraciones para cualquier cambio de esquema en producción
